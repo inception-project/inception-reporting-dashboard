@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inception_reports"
+description = "generate reports based on logs of an INCEpTION project."
+version = "0.1"
+authors = [
+    { name = "Serwar Basch", email = "serwar.basch@tu-darmstadt.de" }
+]
+dependencies = [
+    "streamlit",
+    "pandas",
+    "matplotlib",
+    "numpy",
+]
+
+[project.scripts]
+inception_reports = "inception_reports.__main__:main"
