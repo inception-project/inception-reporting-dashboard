@@ -124,13 +124,6 @@ def read_file(filename) -> pickle.OBJ:
     """
     if filename.endswith(".json"):
         return json.load(open(filename, "r"))
-    # elif filename.endswith(".zip"):
-    #     with zipfile.ZipFile(filename, "r") as zip_file:
-    #         # change the following line to only select files with the name event.log
-    #         project_files = [name for name in zip_file.namelist() if name == "event.log"]
-    #         if log_files:
-    #             with zip_file.open(log_files[0]) as log_file:
-    #                 return pd.read_json(log_file, lines=True)
     else:
         return None
 
@@ -142,7 +135,7 @@ def main():
     parser.add_argument("filename", help="The name of the file containing project details.")
     args = parser.parse_args()
     filename = args.filename
-    st.title(f"INCEpTION {filename} Statistics")
+    st.title(f"INCEpTION Statistics")
 
     project_files = read_file(filename)
     if project_files is None:

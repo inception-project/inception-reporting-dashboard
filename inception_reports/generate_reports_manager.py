@@ -303,7 +303,7 @@ def plot_averages(df) -> None:
     st.pyplot(fig2)
 
 
-def plot_project_progress(df, project_name) -> None:
+def plot_project_progress(df) -> None:
     """
     Generate a visual representation of project progress based on a DataFrame of log data.
 
@@ -395,7 +395,7 @@ def plot_project_progress(df, project_name) -> None:
     project_files = anonymize_filenames(project_files)
 
     if st.button("Export finished files"):
-        with open(f"project_{project_name}_files.json", "w") as output_file:
+        with open("project_files.json", "w") as output_file:
             output_file.write(json.dumps(project_files))
         st.success("Finished files exported successfully ✅")
 
@@ -499,7 +499,7 @@ def main():
     parser.add_argument("filename", help="The name of the file to process")
     args = parser.parse_args()
     filename = args.filename
-    st.title(f"INCEpTION Project {filename.split('/')[-1]} Statistics")
+    st.title(f"INCEpTION Project Statistics")
 
     df = read_file(filename)
     if df is None:
@@ -522,7 +522,7 @@ def main():
         if selected_option == "Average Work Times":
             plot_averages(df)
         elif selected_option == "Project Progress":
-            plot_project_progress(df.copy(), filename.split("/")[-1])
+            plot_project_progress(df.copy())
 
 
 if __name__ == "__main__":
