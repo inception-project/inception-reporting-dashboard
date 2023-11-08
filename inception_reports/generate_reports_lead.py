@@ -30,30 +30,21 @@ st.set_option("deprecation.showPyplotGlobalUse", False)
 warnings.filterwarnings("ignore", message="Boolean Series key will be reindexed to match DataFrame index")
 
 
-def plot_project_progress(project_files) -> None:
+def plot_project_progress(project_progress_data) -> None:
     """
     Generate a visual representation of project progress based on an export of project details provided by the site manager.
 
-    This function takes a dict containing filesname as keys, and file status and estimated time spent on it as keys.
-    Then, it generates visualizations to represent the progress of different documents.
-    It displays a pie chart showing the percentage of finished and remaining
-    documents, along with a bar chart showing the total time spent on finished documents
-    compared to the estimated time for remaining documents.
+    This function takes a dict containing project progress data and generates a pie chart showing the percentage of files finished vs. remaining.
+
 
     Parameters:
-        project_files (dict): A dictionary of all files in the project, with filename as key and a tuple of status (open, finished) and estimated_time as value
+        project_progress_data (dict): A dictionary containing project progress data.
 
     """
-    open_files = [filename for filename, (status, _) in project_files.items() if status == 'open']
-
-    finished_files = {filename: estimated_time for filename, (status, estimated_time) in project_files.items() if status == 'finished'}
-
-    finished_documents_times = list(finished_files.values())
-    total_finished_time = int(np.sum(finished_documents_times))
-    average_finished_time = int(np.mean(finished_documents_times))
-    estimated_remaining_time = len(open_files) * average_finished_time
-
-    data_sizes = [len(finished_files), len(open_files)]
+    
+    data_sizes = [project_progress_data["number_of_finished_documents"],
+                  project_progress_data["number_of_remaining_documents"]]
+    
     pie_labels = ["Finished", "Remaining"]
     pie_colors = ["lightgreen", "lightcoral"]
 
@@ -76,7 +67,8 @@ def plot_project_progress(project_files) -> None:
 
     plt.subplot(1, 2, 2)
     bar_labels = ["Time"]
-    bar_values = [total_finished_time, estimated_remaining_time]
+    bar_values = [project_progress_data["total_finished_time"],
+                  project_progress_data["estimated_remaining_time"]]
     bar_colors = ["lightgreen", "lightcoral"]
     bar_legend_labels = [
         f"{label} ({size} files)"

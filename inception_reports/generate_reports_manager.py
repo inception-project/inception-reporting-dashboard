@@ -385,20 +385,6 @@ def plot_project_progress(df) -> None:
         # store each file and its corresponding total amount of time
         finished_files[file] = total_time
 
-    project_files = {}
-    for name in df["document_name"].unique():
-        if name not in finished_files.keys():
-            project_files[name] = ("open", "-1")
-        elif name in finished_files.keys():
-            project_files[name] = ("finished", finished_files[name])
-
-    project_files = anonymize_filenames(project_files)
-
-    if st.button("Export finished files"):
-        with open("project_files.json", "w") as output_file:
-            output_file.write(json.dumps(project_files))
-        st.success("Finished files exported successfully ✅")
-
     all_document_names = df["document_name"].unique()
     finished_document_names = list(finished_files.keys())
     remaining_document_names = [
@@ -410,7 +396,21 @@ def plot_project_progress(df) -> None:
     average_finished_time = int(np.mean(finished_documents_times))
     estimated_remaining_time = len(remaining_document_names) * average_finished_time
 
-    data_sizes = [len(finished_document_names), len(remaining_document_names)]
+    project_progress_data = {
+        "total_finished_time": total_finished_time,
+        "estimated_remaining_time": estimated_remaining_time,
+        "number_of_finished_documents": len(finished_document_names),
+        "number_of_remaining_documents": len(remaining_document_names)
+    }
+    
+    if st.button("Export finished files"):
+        with open("project_progress_data.json", "w") as output_file:
+            output_file.write(json.dumps(project_progress_data))
+        st.success("Finished files exported successfully ✅")
+
+    data_sizes = [project_progress_data["number_of_finished_documents"],
+                  project_progress_data["number_of_remaining_documents"]]
+    
     pie_labels = ["Finished", "Remaining"]
     pie_colors = ["lightgreen", "lightcoral"]
 
@@ -433,7 +433,8 @@ def plot_project_progress(df) -> None:
 
     plt.subplot(1, 2, 2)
     bar_labels = ["Time"]
-    bar_values = [total_finished_time, estimated_remaining_time]
+    bar_values = [project_progress_data["total_finished_time"],
+                  project_progress_data["estimated_remaining_time"]]
     bar_colors = ["lightgreen", "lightcoral"]
     bar_legend_labels = [
         f"{label} ({size} files)"
