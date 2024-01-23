@@ -1,20 +1,8 @@
-# Licensed to the Technische Universität Darmstadt under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The Technische Universität Darmstadt 
-# licenses this file to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.
- 
-# http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+import enum
+import os
+from tkinter import font
 import warnings
+import zipfile
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -27,10 +15,79 @@ import json
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
 st.set_option("deprecation.showPyplotGlobalUse", False)
+st.set_page_config(page_title="INCEpTION Reporting Dashboard", layout="centered")
 warnings.filterwarnings("ignore", message="Boolean Series key will be reindexed to match DataFrame index")
 
 
-def plot_project_progress(project_progress_data) -> None:
+def change_width(page_width=80) -> None:
+    css=f'''
+    <style>
+    section.main > div {{max-width:{page_width}%}}
+    </style>
+    '''
+    st.markdown(css, unsafe_allow_html=True)
+
+def plot_multiples(projects, tag) -> None:
+
+    st.title(f"Projects with tag: {tag}")
+    plt.figure(figsize=(24, 6), dpi=600)
+
+    pie_labels = [
+        "New",
+        "Annotation In Progress",
+        "Annotation Finished",
+        "Curation In Progress",
+        "Curation Finished",
+    ]
+    pie_colors = [
+        "#fc1c03",
+        "#fcbe03",
+        "#03fc17",
+        "#0373fc",
+        "#4e03fc",
+    ]
+
+    for idx, project in enumerate(projects):
+        plt.subplot(1, len(projects), idx+1)
+        plt.title(project["project_name"].split(".")[0], fontsize=15, fontweight="bold")
+        data_sizes = [
+            project["doc_categories"]["NEW"],
+            project["doc_categories"]["ANNOTATION_IN_PROGRESS"],
+            project["doc_categories"]["ANNOTATION_FINISHED"],
+            project["doc_categories"]["CURATION_IN_PROGRESS"],
+            project["doc_categories"]["CURATION_FINISHED"],
+        ]
+
+        pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
+        
+        wedges, texts = plt.pie(
+            data_sizes,
+            colors=pie_colors,
+            startangle=140,
+            radius=2
+            )
+
+        plt.axis("equal")
+
+        # Create a legend with labels and percentages
+        legend_labels = [
+            f"{label} ({percent:.2f}% / {size} files)"
+            for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
+        ]
+        plt.legend(
+            wedges,
+            legend_labels,
+            title="Categories",
+            fontsize=10,
+            loc="center left",
+            bbox_to_anchor=(1, 0.5),
+        )
+
+    plt.tight_layout()
+    st.pyplot()
+
+
+def plot_project_progress(project_data, multiple=False) -> None:
     """
     Generate a visual representation of project progress based on an export of project details provided by the site manager.
 
@@ -38,86 +95,80 @@ def plot_project_progress(project_progress_data) -> None:
 
 
     Parameters:
-        project_progress_data (dict): A dictionary containing project progress data.
+        project_data (dict): A dictionary containing project progress data.
 
     """
-    
-    data_sizes = [project_progress_data["number_of_finished_documents"],
-                  project_progress_data["number_of_remaining_documents"]]
-    
-    pie_labels = ["Finished", "Remaining"]
-    pie_colors = ["lightgreen", "lightcoral"]
+    st.title(f"Project: {project_data['project_name'].split('.')[0]}")
 
-    pie_labels_with_count = [
-        f"{label}\n({size} files)" for label, size in zip(pie_labels, data_sizes)
+    data_sizes = [
+        project_data["doc_categories"]["NEW"],
+        project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
+        project_data["doc_categories"]["ANNOTATION_FINISHED"],
+        project_data["doc_categories"]["CURATION_IN_PROGRESS"],
+        project_data["doc_categories"]["CURATION_FINISHED"],
     ]
 
-    plt.figure(figsize=(10, 6))
-
-    plt.subplot(1, 2, 1)
-    plt.pie(
+    pie_labels = [
+        "New",
+        "Annotation In Progress",
+        "Annotation Finished",
+        "Curation In Progress",
+        "Curation Finished",
+    ]
+    pie_colors = [
+        "#fc1c03",
+        "#fcbe03",
+        "#03fc17",
+        "#0373fc",
+        "#4e03fc",
+    ]
+    pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
+    plt.figure(figsize=(15, 9))
+    plt.suptitle(f"Documents' Status\n{project_data['project_tags'][-1].upper()}", fontsize=16, fontweight="bold")
+    wedges, texts = plt.pie(
         data_sizes,
-        labels=pie_labels_with_count,
         colors=pie_colors,
-        autopct="%1.1f%%",
-        startangle=140,
-    )
+        startangle=140)
+
     plt.axis("equal")
-    plt.title("Percentage of Files Finished vs. Remaining")
 
-    plt.subplot(1, 2, 2)
-    bar_labels = ["Time"]
-    bar_values = [project_progress_data["total_finished_time"],
-                  project_progress_data["estimated_remaining_time"]]
-    bar_colors = ["lightgreen", "lightcoral"]
-    bar_legend_labels = [
-        f"{label} ({size} files)"
-        for label, size in zip(["Finished", "Estimated Remaining"], data_sizes)
+    # Create a legend with labels and percentages
+    legend_labels = [
+        f"{label} ({percent:.2f}% / {size} files)"
+        for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
     ]
-
-    plt.bar(bar_labels, bar_values[0], color=bar_colors[0], label=bar_legend_labels[0])
-    plt.bar(
-        bar_labels,
-        bar_values[1],
-        bottom=bar_values[0],
-        color=bar_colors[1],
-        label=bar_legend_labels[1],
+    plt.legend(
+        wedges,
+        legend_labels,
+        title="Categories",
+        fontsize=12,
+        loc="center left",
+        bbox_to_anchor=(1, 0.5),
     )
-    plt.ylabel("Time (minutes)")
-    plt.title("Total Time Spent vs. Estimated Time for Remaining Files")
-
-    # Add text labels showing bar values in hours
-    # positioning them centered in the bars
-    for i, val in enumerate(bar_values):
-        plt.text(
-            0,
-            val / 2 if i == 0 else bar_values[i - 1] + val / 2,
-            f"{(val / 60):.1f} hours",
-            color="black",
-            ha="center",
-            va="center",
-            fontsize=12,
-        )
-
-    plt.legend()
     plt.tight_layout()
     st.pyplot()
 
-
-def read_file(filename) -> pickle.OBJ:
+def read_dir(dir) -> list[dict]:
     """
-    Load the pickle file containing the names of all project file and their respective status.
+    Read a file and return a pandas dataframe, regardless of the file type.
 
     Parameters:
-        filename (str): The name of the file to read.
+        dir (str): The dir of INCEpTION projects progress data.
 
-    Returns:
-        The pickle object containing the project files data.
+    Returns
+        List[dict]: A list of dicts containing the project progress data as json files.
     """
-    if filename.endswith(".json"):
-        return json.load(open(filename, "r"))
-    else:
-        return None
+    projects = []
+
+    for file in os.listdir(dir):
+        projects.append(json.load(open(os.path.join(dir, file), "r")))
+    return projects
+
+def get_unique_tags(projects):
+    unique_tags = set()
+    for project in projects:
+        unique_tags.update(project.get('project_tags', []))
+    return list(unique_tags)
 
 
 def main():
@@ -127,14 +178,30 @@ def main():
     parser.add_argument("filename", help="The name of the file containing project details.")
     args = parser.parse_args()
     filename = args.filename
-    st.title(f"INCEpTION Statistics")
+    change_width(80)
+    st.title(f"INCEpTION Projects Progress")
 
-    project_files = read_file(filename)
-    if project_files is None:
-        st.write("Error: No project files found. Please check your input file.")
-        st.stop()
-    else:
-        plot_project_progress(project_files)
+    projects = read_dir("/home/basch/Documents/projects/dashboard_data/projects_progress_data")
+    projects.sort(key=lambda x: x["project_name"])
+
+    unique_tags = get_unique_tags(projects)
+    
+    selected_tags = []
+
+    num_columns_per_row = 3 
+
+    for i in range(0, len(unique_tags), num_columns_per_row):
+        row_tags = unique_tags[i:i+num_columns_per_row]
+        columns = st.columns(len(row_tags))
+
+        for col, tag in zip(columns, row_tags):
+            if col.checkbox(tag.capitalize(), key=tag):
+                selected_tags.append(tag)
+
+    for tag in selected_tags:
+        multi_projects = [project for project in projects if tag in project["project_tags"]]
+        plot_multiples(multi_projects, tag)
+
 
 if __name__ == "__main__":
     main()
