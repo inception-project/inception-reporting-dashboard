@@ -18,6 +18,7 @@ import hashlib
 import json
 import warnings
 import zipfile
+from matplotlib import gridspec
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -29,40 +30,20 @@ import cassis
 from collections import defaultdict
 
 
+
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
 st.set_option("deprecation.showPyplotGlobalUse", False)
+st.set_page_config(page_title="INCEpTION Reporting Dashboard", layout="centered")
+css='''
+<style>
+    section.main > div {max-width:50%}
+</style>
+'''
+st.markdown(css, unsafe_allow_html=True)
 warnings.filterwarnings(
     "ignore", message="Boolean Series key will be reindexed to match DataFrame index"
 )
-
-
-# List of events representing annotations.
-interesting_events = [
-    "DocumentOpenedEvent",
-    "ChainLinkCreatedEvent",
-    "ChainLinkDeletedEvent",
-    "ChainSpanCreatedEvent",
-    "ChainSpanDeletedEvent",
-    "DocumentMetadataCreatedEvent",
-    "DocumentMetadataDeletedEvent",
-    "FeatureValueUpdatedEvent",
-    "RelationCreatedEvent",
-    "RelationDeletedEvent",
-    "SpanCreatedEvent",
-    "SpanDeletedEvent",
-    "SpanMovedEvent",
-    "AnnotationStateChangeEvent",
-]
-
-# List of events representing deleting a previously created annotation.
-deleted_events = [
-    "ChainLinkDeletedEvent",
-    "ChainSpanDeletedEvent",
-    "DocumentMetadataDeletedEvent",
-    "RelationDeletedEvent",
-    "SpanDeletedEvent",
-]
 
 
 def anonymize_users(df) -> pd.DataFrame:
@@ -139,7 +120,6 @@ def anonymize_filenames(project_files: dict) -> dict:
 
     return anonymized_project_files
 
-
 def plot_project_progress(project) -> None:
     """
     Generate a visual representation of project progress based on a DataFrame of log data.
@@ -175,7 +155,7 @@ def plot_project_progress(project) -> None:
         if state in doc_categories:
             doc_categories[state] += 1
 
-    # type_counts = get_type_counts(project_annotations)
+    type_counts = get_type_counts(project_annotations)
 
     project_data = {
         "project_name": project_name,
@@ -183,7 +163,7 @@ def plot_project_progress(project) -> None:
         "doc_categories": doc_categories,
     }
 
-    st.title(f"Project: {project_name.split('.')[0]}")
+    # st.title(f"Project: {project_name.split('.')[0]}")
     if st.button(f"Export data for {project_name.split('.')[0]}"):
         with open(f"{project_name.split('.')[0]}_data.json", "w") as output_file:
             output_file.write(json.dumps(project_data, indent=4))
@@ -205,29 +185,33 @@ def plot_project_progress(project) -> None:
         "Curation Finished",
     ]
     pie_colors = [
-        "#FF9896",
-        "#FFC696",
-        "#96FFC6",
-        "#96C6FF",
-        "#C696FF",
+        "#fc1c03",
+        "#fcbe03",
+        "#03fc17",
+        "#0373fc",
+        "#4e03fc",
     ]
     pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 9))
+    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 0.01, 1])
+
+    ax1 = plt.subplot(gs[0])
+
     wedges, texts = plt.pie(
         data_sizes,
         colors=pie_colors,
-        startangle=140,
+        startangle=140
     )
 
     plt.axis("equal")
     total_annotations = sum(
         [len(cas_file.select_all()) for cas_file in project_annotations.values()]
     )
-    plt.title(f"Percentage of Files Status.\nTotal Annotations: {total_annotations}")
+    plt.title(f"Documents' Status")
 
     # Create a legend with labels and percentages
     legend_labels = [
-        f"{label} ({percent:.2f} / {size} files)"
+        f"{label} ({percent:.2f}% / {size} files)"
         for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
     ]
     plt.legend(
@@ -238,13 +222,15 @@ def plot_project_progress(project) -> None:
         bbox_to_anchor=(1, 0.5),
     )
 
-    # plt.subplot(1, 2, 2)
-    # plt.barh(
-    #     list(type_counts.keys()),
-    #     list(type_counts.values()),
-    # )
+    ax2 = plt.subplot(gs[2])
 
-    # plt.legend()
+    plt.title(f"Types of Annotations")
+    plt.barh(
+        list(type_counts.keys()),
+        list(type_counts.values()),
+    )
+
+    plt.suptitle(f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}', fontsize=16)
     plt.tight_layout()
     st.pyplot()
 
@@ -254,8 +240,9 @@ def get_type_counts(annotations):
     for doc in annotations:
         for t in annotations[doc].typesystem.get_types():
             count = len(annotations[doc].select(t.name))
-            # TODO
-            type_names.append((t.name.split(".")[-1], count))
+            name = t.name.split(".")[-1]
+            if not name == "Token":
+                type_names.append((name, count))
 
     count_dict = defaultdict(int)
     for type_name, count in type_names:
@@ -338,6 +325,7 @@ def main():
     # parser.add_argument("filename", help="The name of the file to process")
     # args = parser.parse_args()
     # filename = args.filename
+    
     st.title(f"INCEpTION Berlin Projects Statistics")
 
     projects = read_dir("/home/basch/Documents/projects/dashboard_data/berlin_projects")
