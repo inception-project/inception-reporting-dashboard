@@ -181,7 +181,7 @@ def main():
     change_width(80)
     st.title(f"INCEpTION Projects Progress")
 
-    projects = read_dir("/home/basch/Documents/projects/dashboard_data/projects_progress_data")
+    projects = read_dir("/dashboard_data/projects_progress_data")
     projects.sort(key=lambda x: x["project_name"])
 
     unique_tags = get_unique_tags(projects)

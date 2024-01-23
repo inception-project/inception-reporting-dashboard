@@ -328,7 +328,7 @@ def main():
     
     st.title(f"INCEpTION Berlin Projects Statistics")
 
-    projects = read_dir("/home/basch/Documents/projects/dashboard_data/berlin_projects")
+    projects = read_dir("/berlin_projects")
     projects.sort(key=lambda x: x["name"])
     for project in projects:
         plot_project_progress(project)
