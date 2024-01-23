@@ -1,11 +1,11 @@
 # Licensed to the Technische Universität Darmstadt under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
-# regarding copyright ownership.  The Technische Universität Darmstadt 
+# regarding copyright ownership.  The Technische Universität Darmstadt
 # licenses this file to you under the Apache License, Version 2.0 (the
 # "License"); you may not use this file except in compliance
 # with the License.
- 
+
 # http://www.apache.org/licenses/LICENSE-2.0
 
 # Unless required by applicable law or agreed to in writing, software
@@ -24,6 +24,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import argparse
+import os
+import cassis
+from collections import defaultdict
 
 
 # suppress deprecation warnings related to the use of the pyplot
@@ -137,173 +140,7 @@ def anonymize_filenames(project_files: dict) -> dict:
     return anonymized_project_files
 
 
-def plot_averages(df) -> None:
-    """
-    Generates and displays a series of plots to visualize various statistics based on a DataFrame of log data.
-
-    This function takes a DataFrame containing and generates plots to visualize three aspects:
-    1. Cumulative duration of user sessions: Plots the cumulative duration of user sessions for each user.
-    2. Average session duration per user: Plots the average session duration for each user.
-    3. Average time per annotation per user: Plots the average time spent on each annotation for each user.
-
-    Parameters:
-        df (pd.DataFrame): The input DataFrame containing log data.
-    """
-
-    # we remove "DocumentOpenedEvent" because it does not indicate an annotation
-    interesting_events.remove("DocumentOpenedEvent")
-    filtered_df = df[df["event"].isin(interesting_events)]
-
-    unique_year = sorted(filtered_df["created_readable"].dt.year.unique())
-    selected_year = st.selectbox("Select a year", unique_year, index=0)
-    filtered_df = filtered_df[(df["created_readable"].dt.year == selected_year)]
-
-    selected_option = st.checkbox("Filter by month too?")
-    if selected_option:
-        unique_month = sorted(filtered_df["created_readable"].dt.month.unique())
-        selected_month = st.selectbox("Select a month", unique_month, index=0)
-        filtered_df = filtered_df[(df["created_readable"].dt.month == selected_month)]
-
-    threshold = st.slider(
-        "Threshold for Session Breaks (minutes)",
-        min_value=1,
-        max_value=10,
-        value=1,
-        step=1,
-    )
-    threshold = threshold * 60000
-
-    filtered_df = filtered_df.sort_values(by="created", ascending=True)
-    filtered_df["time_interval"] = filtered_df["created"].diff()
-    filtered_df["session"] = (filtered_df["time_interval"] > threshold).cumsum() + 1
-    filtered_df.reset_index(inplace=True)
-
-    filtered_df["duration"] = filtered_df.groupby("session")[
-        "created_readable"
-    ].transform(lambda x: x.max() - x.min())
-    filtered_df["duration_readable"] = filtered_df["duration"].apply(lambda x: str(x))
-    filtered_df["duration_seconds"] = filtered_df["duration"].dt.total_seconds()
-    filtered_df["duration_minutes"] = filtered_df["duration"].dt.total_seconds() / 60
-    filtered_df["duration_hours"] = filtered_df["duration"].dt.total_seconds() / 3600
-
-    cumulative_sessions_duration = (
-        filtered_df.groupby(["user", "session"])["duration_hours"]
-        .first()
-        .groupby("user")
-        .transform("cumsum")
-        .groupby("user")
-        .max()
-    )
-
-    # Generate formatted x-labels for users based on session count per user
-    user_sessions_count = (
-        filtered_df.groupby(["user", "session"])["duration_hours"]
-        .first()
-        .cumsum()
-        .reset_index()
-        .groupby("user")
-        .size()
-    )
-    x_labels = [
-        f"{user}\n{sessions} Sessions" for user, sessions in user_sessions_count.items()
-    ]
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    for user, user_data in cumulative_sessions_duration.to_dict().items():
-        ax.bar(
-            user,
-            user_data,
-            label=user,
-        )
-
-    ax.set_xlabel("User")
-    ax.set_ylabel("Cumulative Duration")
-    ax.set_title(f"Cumulative Time (hours) Spent on Documents")
-    ax.legend()
-    ax.grid(True)
-    ax.set_xticks(range(0, len(x_labels)))
-    ax.set_xticklabels(x_labels, rotation=45)
-    st.pyplot(fig)
-
-    # Calculates the average session duration per user
-    # denominator: cumluative time spent per user, in minutes
-    # numerator: total amount of sessions per user
-    average_sess_duration = (
-        filtered_df.groupby(["user", "session"])["duration_minutes"]
-        .first()
-        .groupby("user")
-        .transform("cumsum")
-        .groupby("user")
-        .max()
-        / filtered_df.groupby(["user", "session"])["duration_minutes"]
-        .first()
-        .cumsum()
-        .reset_index()
-        .groupby("user")
-        .size()
-    )
-
-    fig2, ax2 = plt.subplots(figsize=(12, 6))
-
-    for user, user_data in average_sess_duration.to_dict().items():
-        ax2.bar(
-            user,
-            user_data,
-            label=user,
-        )
-
-    ax2.set_xlabel("User")
-    ax2.set_ylabel("Average Time (minutes)")
-    ax2.set_title(f"Average time per session (minutes) spent on Documents")
-    ax2.legend()
-    ax2.grid(True)
-    ax2.set_xticks(range(0, len(x_labels)))
-    ax2.set_xticklabels(x_labels, rotation=45)
-    st.pyplot(fig2)
-
-    # Calculates the average session duration per user
-    # denominator: cumluative time spent per user, in seconds
-    # numerator: total amount of events, i.e. annotations, per user
-    avg_time_per_annotation = (
-        filtered_df.groupby(["user", "session"])["duration_seconds"]
-        .first()
-        .groupby("user")
-        .transform("cumsum")
-        .groupby("user")
-        .max()
-        / filtered_df.groupby("user")["event"].count()
-    )
-
-    # Generate formatted x-labels for users based on total event, i.e. annotation, count per user
-    x_labels = [
-        f"{user}\n{sessions} Annos."
-        for user, sessions in filtered_df.groupby("user")["event"]
-        .count()
-        .to_dict()
-        .items()
-    ]
-
-    fig3, ax3 = plt.subplots(figsize=(12, 6))
-
-    for user, user_data in avg_time_per_annotation.to_dict().items():
-        ax3.bar(
-            user,
-            user_data,
-            label=user,
-        )
-
-    ax3.set_xlabel("User")
-    ax3.set_ylabel("Average time (seconds)")
-    ax3.set_title(f"Average time (seconds) per Annotation")
-    ax3.legend()
-    ax3.grid(True)
-    ax3.set_xticks(range(0, len(x_labels)))
-    ax3.set_xticklabels(x_labels, rotation=45)
-    st.pyplot(fig2)
-
-
-def plot_project_progress(df) -> None:
+def plot_project_progress(project) -> None:
     """
     Generate a visual representation of project progress based on a DataFrame of log data.
 
@@ -315,215 +152,198 @@ def plot_project_progress(df) -> None:
     compared to the estimated time for remaining documents.
 
     Parameters:
-        df (pandas.DataFrame): : The input DataFrame containing event data.
+        project (dict): A dict containing project information, namely the name, tags, annotations, and logs.
 
     """
 
-    threshold_p = st.slider(
-        "Threshold for Session Breaks (minutes)",
-        min_value=1,
-        max_value=10,
-        value=1,
-        step=1,
-    )
-    threshold = threshold_p * 60000
+    # df = project["logs"]
+    project_name = project["name"]
+    project_tags = project["tags"]
+    project_annotations = project["annotations"]
+    project_documents = project["documents"]
 
-    finished_files = {}
-
-    # Iterate over all documents
-    # Calculate total amount of time spent on them
-    for file, doc_df in df.groupby("document_name"):
-        filtered_doc_df = doc_df[doc_df["event"].isin(interesting_events)]
-        filtered_doc_df = filtered_doc_df.sort_values(by="created", ascending=True)
-        filtered_doc_df.reset_index(inplace=True)
-
-        # total time spent on document is the sum of time spent on events
-        # between opening the document for the first time and marking it finished for the last time
-        last_finish = filtered_doc_df[
-            filtered_doc_df["details"].apply(
-                lambda x: isinstance(x, dict) and x.get("state") == "FINISHED"
-            )
-        ].index.max()
-        # If there is no "Finished" event, then the document hasn't been marked finished and is still in progress
-        if math.isnan(last_finish):
-            continue
-
-        first_open = filtered_doc_df[
-            filtered_doc_df["event"] == "DocumentOpenedEvent"
-        ].index.min()
-        # If there is no "DocumentOpenedEvent" then the document hasn't been opened yet, i.e. is not finished yet
-        if math.isnan(first_open):
-            continue
-
-        # filter for events between first open and last finish
-        filtered_doc_df = filtered_doc_df[first_open : last_finish + 1]
-        filtered_doc_df["time_interval"] = filtered_doc_df["created"].diff()
-        filtered_doc_df["session"] = (
-            filtered_doc_df["time_interval"] > threshold
-        ).cumsum() + 1
-        filtered_doc_df.reset_index(inplace=True)
-
-        # This is just a workaround for the first event not having an interval because it's the first event
-        if math.isnan(filtered_doc_df.at[0, "time_interval"]):
-            filtered_doc_df.at[0, "time_interval"] = threshold
-
-        # calculate the duration of time spent on each session iteratively
-        filtered_doc_df["duration"] = filtered_doc_df.groupby("session")[
-            "created_readable"
-        ].transform(lambda x: x.max() - x.min())
-        filtered_doc_df["duration_minutes"] = (
-            filtered_doc_df["duration"].dt.total_seconds() / 60
-        )
-
-        # cumluative amount of time spent on each session
-        total_time = (
-            filtered_doc_df.groupby(["session"])["duration_minutes"]
-            .first()
-            .cumsum()
-            .max()
-        )
-        # store each file and its corresponding total amount of time
-        finished_files[file] = total_time
-
-    all_document_names = df["document_name"].unique()
-    finished_document_names = list(finished_files.keys())
-    remaining_document_names = [
-        name for name in all_document_names if name not in finished_document_names
-    ]
-
-    finished_documents_times = list(finished_files.values())
-    total_finished_time = int(np.sum(finished_documents_times))
-    average_finished_time = int(np.mean(finished_documents_times))
-    estimated_remaining_time = len(remaining_document_names) * average_finished_time
-
-    project_progress_data = {
-        "total_finished_time": total_finished_time,
-        "estimated_remaining_time": estimated_remaining_time,
-        "number_of_finished_documents": len(finished_document_names),
-        "number_of_remaining_documents": len(remaining_document_names)
+    doc_categories = {
+        "ANNOTATION_IN_PROGRESS": 0,
+        "ANNOTATION_FINISHED": 0,
+        "CURATION_IN_PROGRESS": 0,
+        "CURATION_FINISHED": 0,
+        "NEW": 0,
     }
-    
-    if st.button("Export finished files"):
-        with open("project_progress_data.json", "w") as output_file:
-            output_file.write(json.dumps(project_progress_data))
-        st.success("Finished files exported successfully ✅")
 
-    data_sizes = [project_progress_data["number_of_finished_documents"],
-                  project_progress_data["number_of_remaining_documents"]]
-    
-    pie_labels = ["Finished", "Remaining"]
-    pie_colors = ["lightgreen", "lightcoral"]
+    for doc in project_documents:
+        state = doc["state"]
+        if state in doc_categories:
+            doc_categories[state] += 1
 
-    pie_labels_with_count = [
-        f"{label}\n({size} files)" for label, size in zip(pie_labels, data_sizes)
+    # type_counts = get_type_counts(project_annotations)
+
+    project_data = {
+        "project_name": project_name,
+        "project_tags": project_tags,
+        "doc_categories": doc_categories,
+    }
+
+    st.title(f"Project: {project_name.split('.')[0]}")
+    if st.button(f"Export data for {project_name.split('.')[0]}"):
+        with open(f"{project_name.split('.')[0]}_data.json", "w") as output_file:
+            output_file.write(json.dumps(project_data, indent=4))
+        st.success(f"{project_name.split('.')[0]} data exported successfully ✅")
+
+    data_sizes = [
+        project_data["doc_categories"]["NEW"],
+        project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
+        project_data["doc_categories"]["ANNOTATION_FINISHED"],
+        project_data["doc_categories"]["CURATION_IN_PROGRESS"],
+        project_data["doc_categories"]["CURATION_FINISHED"],
     ]
 
+    pie_labels = [
+        "New",
+        "Annotation In Progress",
+        "Annotation Finished",
+        "Curation In Progress",
+        "Curation Finished",
+    ]
+    pie_colors = [
+        "#FF9896",
+        "#FFC696",
+        "#96FFC6",
+        "#96C6FF",
+        "#C696FF",
+    ]
+    pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
     plt.figure(figsize=(10, 6))
-
-    plt.subplot(1, 2, 1)
-    plt.pie(
+    wedges, texts = plt.pie(
         data_sizes,
-        labels=pie_labels_with_count,
         colors=pie_colors,
-        autopct="%1.1f%%",
         startangle=140,
     )
+
     plt.axis("equal")
-    plt.title("Percentage of Files Finished vs. Remaining")
-
-    plt.subplot(1, 2, 2)
-    bar_labels = ["Time"]
-    bar_values = [project_progress_data["total_finished_time"],
-                  project_progress_data["estimated_remaining_time"]]
-    bar_colors = ["lightgreen", "lightcoral"]
-    bar_legend_labels = [
-        f"{label} ({size} files)"
-        for label, size in zip(["Finished", "Estimated Remaining"], data_sizes)
-    ]
-
-    plt.bar(bar_labels, bar_values[0], color=bar_colors[0], label=bar_legend_labels[0])
-    plt.bar(
-        bar_labels,
-        bar_values[1],
-        bottom=bar_values[0],
-        color=bar_colors[1],
-        label=bar_legend_labels[1],
+    total_annotations = sum(
+        [len(cas_file.select_all()) for cas_file in project_annotations.values()]
     )
-    plt.ylabel("Time (minutes)")
-    plt.title("Total Time Spent vs. Estimated Time for Remaining Files")
+    plt.title(f"Percentage of Files Status.\nTotal Annotations: {total_annotations}")
 
-    # Add text labels showing bar values in hours
-    # positioning them centered in the bars
-    for i, val in enumerate(bar_values):
-        plt.text(
-            0,
-            val / 2 if i == 0 else bar_values[i - 1] + val / 2,
-            f"{(val / 60):.1f} hours",
-            color="black",
-            ha="center",
-            va="center",
-            fontsize=12,
-        )
+    # Create a legend with labels and percentages
+    legend_labels = [
+        f"{label} ({percent:.2f} / {size} files)"
+        for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
+    ]
+    plt.legend(
+        wedges,
+        legend_labels,
+        title="Categories",
+        loc="center left",
+        bbox_to_anchor=(1, 0.5),
+    )
 
-    plt.legend()
+    # plt.subplot(1, 2, 2)
+    # plt.barh(
+    #     list(type_counts.keys()),
+    #     list(type_counts.values()),
+    # )
+
+    # plt.legend()
     plt.tight_layout()
     st.pyplot()
 
 
-def read_file(filename) -> pd.DataFrame:
+def get_type_counts(annotations):
+    type_names = []
+    for doc in annotations:
+        for t in annotations[doc].typesystem.get_types():
+            count = len(annotations[doc].select(t.name))
+            # TODO
+            type_names.append((t.name.split(".")[-1], count))
+
+    count_dict = defaultdict(int)
+    for type_name, count in type_names:
+        count_dict[type_name] += count
+
+    aggregated_type_names = list(count_dict.items())
+    aggregated_type_names.sort(key=lambda x: x[1], reverse=True)
+
+    return count_dict
+
+
+def read_dir(dir) -> list[dict]:
     """
     Read a file and return a pandas dataframe, regardless of the file type.
 
     Parameters:
-        filename (str): The name of the file to read.
+        dir (str): The dir of INCEpTION projects.
 
     Returns
-        pandas.DataFrame: A pandas dataframe containing the contents of the file.
+        List[dict]: A list of dicts containing the project data.
     """
-    if filename.endswith(".log"):
-        return pd.read_json(filename, lines=True)
-    elif filename.endswith(".zip"):
-        with zipfile.ZipFile(filename, "r") as zip_file:
-            # change the following line to only select files with the name event.log
-            log_files = [name for name in zip_file.namelist() if name == "event.log"]
-            if log_files:
-                with zip_file.open(log_files[0]) as log_file:
-                    return pd.read_json(log_file, lines=True)
-    else:
-        return None
+    projects = []
+
+    for file in os.listdir(dir):
+        if zipfile.is_zipfile(os.path.join(dir, file)):
+            with zipfile.ZipFile(os.path.join(dir, file), "r") as zip_file:
+                # change the following line to only select files with the name event.log
+                # log_files = [name for name in zip_file.namelist() if name == "event.log"][0]
+                # if log_files:
+                # with zip_file.open(log_files) as log_file:
+                #     logs = pd.read_json(log_file, lines=True)
+                #     logs = anonymize_users(logs)
+                #     logs["created_readable"] = pd.to_datetime(
+                #         logs["created"], unit="ms"
+                #     )
+                project_meta = [
+                    name
+                    for name in zip_file.namelist()
+                    if name == "exportedproject.json"
+                ][0]
+                with zip_file.open(project_meta) as project_meta_file:
+                    project_meta = json.load(project_meta_file)
+                    project_tags = [
+                        w.strip("#")
+                        for w in project_meta["description"].split()
+                        if w.startswith("#")
+                    ]
+                    project_documents = project_meta["source_documents"]
+                annotations = {}
+                # only list the folders that start with "annotation"
+                annotation_folders = [
+                    name
+                    for name in zip_file.namelist()
+                    if name.startswith("annotation/")
+                    and name.endswith("INITIAL_CAS.json")
+                ]
+                if annotation_folders:
+                    for annotation_file in annotation_folders:
+                        subfolder_name = os.path.dirname(annotation_file).split("/")[1]
+                        with zip_file.open(annotation_file) as cas_file:
+                            cas = cassis.load_cas_from_json(cas_file)
+                            annotations[subfolder_name] = cas
+
+                projects.append(
+                    {
+                        "name": file,
+                        "tags": project_tags,
+                        "documents": project_documents,
+                        # "logs": logs,
+                        "annotations": annotations,
+                    }
+                )
+    return projects
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate plots for logs of your INCEpTION project."
-    )
-    parser.add_argument("filename", help="The name of the file to process")
-    args = parser.parse_args()
-    filename = args.filename
-    st.title(f"INCEpTION Project Statistics")
+    # parser = argparse.ArgumentParser(
+    # description="Generate plots for logs of your INCEpTION project."
+    # )
+    # parser.add_argument("filename", help="The name of the file to process")
+    # args = parser.parse_args()
+    # filename = args.filename
+    st.title(f"INCEpTION Berlin Projects Statistics")
 
-    df = read_file(filename)
-    if df is None:
-        st.write("Error: No log files found. Please check your input file.")
-        st.stop()
-    else:
-        with st.sidebar:
-            selected_option = st.radio(
-                "Choose a plot:", ["Average Work Times", "Project Progress"], index=0
-            )
-        with st.sidebar:
-            annonymize = st.checkbox("Anonymize annotators' names?")
-
-        if annonymize:
-            df = anonymize_users(df)
-
-        df["created_readable"] = pd.to_datetime(df["created"], unit="ms")
-        df["created_readable_dates"] = df["created_readable"].dt.date
-
-        if selected_option == "Average Work Times":
-            plot_averages(df)
-        elif selected_option == "Project Progress":
-            plot_project_progress(df.copy())
+    projects = read_dir("/home/basch/Documents/projects/dashboard_data/berlin_projects")
+    projects.sort(key=lambda x: x["name"])
+    for project in projects:
+        plot_project_progress(project)
 
 
 if __name__ == "__main__":
