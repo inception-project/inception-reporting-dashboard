@@ -1,3 +1,7 @@
 .idea
 inception_reports.egg-info
 __pycache__
+/berlin_projects
+/berlin_project_1
+.vscode/settings.json
+*.ipynb

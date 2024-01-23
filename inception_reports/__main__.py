@@ -25,7 +25,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate plots for logs of your INCEpTION project."
     )
-    parser.add_argument("filename", help="The name of the file to process")
+    # parser.add_argument("filename", help="The name of the file to process")
     parser.add_argument(
         "--role",
         help="Your role in the project (project manager, project lead)",
@@ -33,7 +33,7 @@ def main():
         required=True,
     )
     args = parser.parse_args()
-    filename = args.filename
+    filename = "args.filename"
     user_role = args.role
 
     if user_role == "manager":
