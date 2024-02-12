@@ -14,32 +14,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import hashlib
 import json
+import os
+import shutil
 import warnings
 import zipfile
-from matplotlib import gridspec
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import math
-import argparse
-import os
-import cassis
 from collections import defaultdict
 
-
+import cassis
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import streamlit as st
+from matplotlib import gridspec
 
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
 st.set_option("deprecation.showPyplotGlobalUse", False)
 st.set_page_config(page_title="INCEpTION Reporting Dashboard", layout="centered")
-css='''
+css = """
 <style>
     section.main > div {max-width:50%}
 </style>
-'''
+"""
 st.markdown(css, unsafe_allow_html=True)
 warnings.filterwarnings(
     "ignore", message="Boolean Series key will be reindexed to match DataFrame index"
@@ -120,6 +119,7 @@ def anonymize_filenames(project_files: dict) -> dict:
 
     return anonymized_project_files
 
+
 def plot_project_progress(project) -> None:
     """
     Generate a visual representation of project progress based on a DataFrame of log data.
@@ -197,11 +197,7 @@ def plot_project_progress(project) -> None:
 
     ax1 = plt.subplot(gs[0])
 
-    wedges, texts = plt.pie(
-        data_sizes,
-        colors=pie_colors,
-        startangle=140
-    )
+    wedges, texts = plt.pie(data_sizes, colors=pie_colors, startangle=140)
 
     plt.axis("equal")
     total_annotations = sum(
@@ -230,23 +226,39 @@ def plot_project_progress(project) -> None:
         list(type_counts.values()),
     )
 
-    plt.suptitle(f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}', fontsize=16)
+    plt.suptitle(
+        f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
+        fontsize=16,
+    )
     plt.tight_layout()
     st.pyplot()
 
 
-def get_type_counts(annotations):
-    type_names = []
-    for doc in annotations:
-        for t in annotations[doc].typesystem.get_types():
-            count = len(annotations[doc].select(t.name))
-            name = t.name.split(".")[-1]
-            if not name == "Token":
-                type_names.append((name, count))
+def find_element_by_name(element_list, name):
+    for element in element_list:
+        if element.name == name:
+            return element.uiName
+    return name.split(".")[-1]
 
+
+def get_type_counts(annotations):
     count_dict = defaultdict(int)
-    for type_name, count in type_names:
-        count_dict[type_name] += count
+
+    layerDefinition = annotations.popitem()[1].select(
+        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+    )
+    for doc in annotations:
+        type_names = [
+            (
+                find_element_by_name(layerDefinition, t.name),
+                len(annotations[doc].select(t.name)),
+            )
+            for t in annotations[doc].typesystem.get_types()
+            if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+        ]
+
+        for type_name, count in type_names:
+            count_dict[type_name] += count
 
     aggregated_type_names = list(count_dict.items())
     aggregated_type_names.sort(key=lambda x: x[1], reverse=True)
@@ -254,7 +266,56 @@ def get_type_counts(annotations):
     return count_dict
 
 
-def read_dir(dir) -> list[dict]:
+def read_dir(dir_path: str) -> list[dict]:
+    projects = []
+
+    for file_name in os.listdir(dir_path):
+        file_path = os.path.join(dir_path, file_name)
+        if zipfile.is_zipfile(file_path):
+            with zipfile.ZipFile(file_path, "r") as zip_file:
+                zip_path = f"{dir_path}/{file_name.split('.')[0]}"
+                zip_file.extractall(path=zip_path)
+
+                # Find project metadata file
+                project_meta_path = os.path.join(zip_path, "exportedproject.json")
+                if os.path.exists(project_meta_path):
+                    with open(project_meta_path, "r") as project_meta_file:
+                        project_meta = json.load(project_meta_file)
+                        project_tags = [
+                            word.strip("#")
+                            for word in project_meta["description"].split()
+                            if word.startswith("#")
+                        ]
+                        project_documents = project_meta["source_documents"]
+
+                annotations = {}
+                # Find annotation folders
+                annotation_folders = [
+                    name
+                    for name in zip_file.namelist()
+                    if name.endswith("INITIAL_CAS.json")
+                ]
+                for annotation_file in annotation_folders:
+                    subfolder_name = os.path.dirname(annotation_file).split("/")[1]
+                    with zip_file.open(annotation_file) as cas_file:
+                        cas = cassis.load_cas_from_json(cas_file)
+                        annotations[subfolder_name] = cas
+                
+                projects.append(
+                    {
+                        "name": file_name,
+                        "tags": project_tags,
+                        "documents": project_documents,
+                        "annotations": annotations,
+                    }
+                )
+
+                shutil.rmtree(zip_path)
+
+    return projects
+
+
+def read_dir_old(dir) -> list[dict]:
     """
     Read a file and return a pandas dataframe, regardless of the file type.
 
@@ -269,15 +330,6 @@ def read_dir(dir) -> list[dict]:
     for file in os.listdir(dir):
         if zipfile.is_zipfile(os.path.join(dir, file)):
             with zipfile.ZipFile(os.path.join(dir, file), "r") as zip_file:
-                # change the following line to only select files with the name event.log
-                # log_files = [name for name in zip_file.namelist() if name == "event.log"][0]
-                # if log_files:
-                # with zip_file.open(log_files) as log_file:
-                #     logs = pd.read_json(log_file, lines=True)
-                #     logs = anonymize_users(logs)
-                #     logs["created_readable"] = pd.to_datetime(
-                #         logs["created"], unit="ms"
-                #     )
                 project_meta = [
                     name
                     for name in zip_file.namelist()
@@ -319,16 +371,15 @@ def read_dir(dir) -> list[dict]:
 
 
 def main():
-    # parser = argparse.ArgumentParser(
-    # description="Generate plots for logs of your INCEpTION project."
-    # )
-    # parser.add_argument("filename", help="The name of the file to process")
-    # args = parser.parse_args()
-    # filename = args.filename
-    
+    parser = argparse.ArgumentParser(
+        description="Generate plots for your INCEpTION project."
+    )
+    parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
+    args = parser.parse_args()
+
     st.title(f"INCEpTION Berlin Projects Statistics")
 
-    projects = read_dir("/berlin_projects")
+    projects = read_dir(args.projects_folder)
     projects.sort(key=lambda x: x["name"])
     for project in projects:
         plot_project_progress(project)

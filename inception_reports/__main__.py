@@ -1,11 +1,11 @@
 # Licensed to the Technische Universität Darmstadt under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
-# regarding copyright ownership.  The Technische Universität Darmstadt 
+# regarding copyright ownership.  The Technische Universität Darmstadt
 # licenses this file to you under the Apache License, Version 2.0 (the
 # "License"); you may not use this file except in compliance
 # with the License.
- 
+
 # http://www.apache.org/licenses/LICENSE-2.0
 
 # Unless required by applicable law or agreed to in writing, software
@@ -20,34 +20,31 @@ import argparse
 from streamlit.web import cli
 
 
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate plots for logs of your INCEpTION project."
+        description="Generate plots for your INCEpTION project."
     )
-    # parser.add_argument("filename", help="The name of the file to process")
-    parser.add_argument(
-        "--role",
-        help="Your role in the project (project manager, project lead)",
-        choices=["manager", "lead"],
-        required=True,
+    parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--manager", help="You are a project manager", action="store_true"
     )
-    args = parser.parse_args()
-    filename = "args.filename"
-    user_role = args.role
+    group.add_argument("--lead", help="You are a project lead", action="store_true")
 
-    if user_role == "manager":
+    args = parser.parse_args()
+
+    if args.manager:
         sys.argv = [
             "streamlit",
             "run",
             f"{os.path.dirname(os.path.realpath(__file__))}/generate_reports_manager.py",
-            f"{filename}"
+            f"{args.projects_folder}",
         ]
-    elif user_role == "lead":
+    elif args.lead:
         sys.argv = [
             "streamlit",
             "run",
             f"{os.path.dirname(os.path.realpath(__file__))}/generate_reports_lead.py",
-            f"{filename}"
+            f"{args.projects_folder}",
         ]
     sys.exit(cli.main())

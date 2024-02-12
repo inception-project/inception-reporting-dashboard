@@ -1,16 +1,11 @@
-import enum
-import os
-from tkinter import font
-import warnings
-import zipfile
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import pickle
 import argparse
 import json
+import os
+import warnings
 
+import matplotlib.pyplot as plt
+import numpy as np
+import streamlit as st
 
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
@@ -173,21 +168,20 @@ def get_unique_tags(projects):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Visualize project progress for your INCEpTION project."
+        description="Generate plots for your INCEpTION project."
     )
-    parser.add_argument("filename", help="The name of the file containing project details.")
+    parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
     args = parser.parse_args()
-    filename = args.filename
+
     change_width(80)
     st.title(f"INCEpTION Projects Progress")
 
-    projects = read_dir("/dashboard_data/projects_progress_data")
+    projects = read_dir(args.projects_folder)
     projects.sort(key=lambda x: x["project_name"])
 
     unique_tags = get_unique_tags(projects)
     
     selected_tags = []
-
     num_columns_per_row = 3 
 
     for i in range(0, len(unique_tags), num_columns_per_row):
