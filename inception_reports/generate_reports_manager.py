@@ -110,32 +110,32 @@ def plot_project_progress(project) -> None:
         "Curation Finished",
     ]
     pie_colors = [
-        "#fc1c03",
-        "#fcbe03",
-        "#03fc17",
-        "#0373fc",
-        "#4e03fc",
+        'tab:red',
+        'cornflowerblue',
+        'royalblue',
+        'limegreen',
+        'forestgreen',
     ]
     pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
-    plt.figure(figsize=(15, 9))
+    fig = plt.figure(figsize=(15, 9))
     gs = gridspec.GridSpec(1, 3, width_ratios=[1, 0.01, 1])
 
     ax1 = plt.subplot(gs[0])
 
-    wedges, texts = plt.pie(data_sizes, colors=pie_colors, startangle=140)
+    wedges, _ = ax1.pie(data_sizes, colors=pie_colors, startangle=140)
 
-    plt.axis("equal")
+    ax1.axis("equal")
     total_annotations = sum(
         [len(cas_file.select_all()) for cas_file in project_annotations.values()]
     )
-    plt.title(f"Documents' Status")
+    ax1.set_title(f"Documents' Status")
 
-    # Create a legend with labels and percentages
+
     legend_labels = [
         f"{label} ({percent:.2f}% / {size} files)"
         for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
     ]
-    plt.legend(
+    ax1.legend(
         wedges,
         legend_labels,
         title="Categories",
@@ -144,18 +144,21 @@ def plot_project_progress(project) -> None:
     )
 
     ax2 = plt.subplot(gs[2])
-
-    plt.title(f"Types of Annotations")
-    plt.barh(
+    colors = plt.cm.tab10(range(len(type_counts.keys())))
+    ax2.set_title(f"Types of Annotations")
+    ax2.barh(
         list(type_counts.keys()),
         list(type_counts.values()),
+        color=colors,
     )
-
-    plt.suptitle(
+    ax2.set_xscale("log")
+    
+    ax2.set_xlabel("Number of Annotations (log scale)")
+    fig.suptitle(
         f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
         fontsize=16,
     )
-    plt.tight_layout()
+    fig.tight_layout()
     st.pyplot()
 
 
@@ -183,7 +186,8 @@ def get_type_counts(annotations):
         ]
 
         for type_name, count in type_names:
-            count_dict[type_name] += count
+            if count  > 0:
+                count_dict[type_name] += count
 
     aggregated_type_names = list(count_dict.items())
     aggregated_type_names.sort(key=lambda x: x[1], reverse=True)
