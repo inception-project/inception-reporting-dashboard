@@ -110,11 +110,11 @@ def plot_project_progress(project) -> None:
         "Curation Finished",
     ]
     pie_colors = [
-        'tab:red',
-        'cornflowerblue',
-        'royalblue',
-        'limegreen',
-        'forestgreen',
+        "tab:red",
+        "cornflowerblue",
+        "royalblue",
+        "limegreen",
+        "forestgreen",
     ]
     pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
     fig = plt.figure(figsize=(15, 9))
@@ -122,14 +122,15 @@ def plot_project_progress(project) -> None:
 
     ax1 = plt.subplot(gs[0])
 
-    wedges, _ = ax1.pie(data_sizes, colors=pie_colors, startangle=140)
+    wedges, _ = ax1.pie(
+        data_sizes, colors=pie_colors, startangle=90, radius=2, counterclock=False
+    )
 
     ax1.axis("equal")
     total_annotations = sum(
         [len(cas_file.select_all()) for cas_file in project_annotations.values()]
     )
     ax1.set_title(f"Documents' Status")
-
 
     legend_labels = [
         f"{label} ({percent:.2f}% / {size} files)"
@@ -152,7 +153,7 @@ def plot_project_progress(project) -> None:
         color=colors,
     )
     ax2.set_xscale("log")
-    
+
     ax2.set_xlabel("Number of Annotations (log scale)")
     fig.suptitle(
         f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
@@ -186,7 +187,7 @@ def get_type_counts(annotations):
         ]
 
         for type_name, count in type_names:
-            if count  > 0:
+            if count > 0:
                 count_dict[type_name] += count
 
     aggregated_type_names = list(count_dict.items())
@@ -229,7 +230,7 @@ def read_dir(dir_path: str) -> list[dict]:
                     with zip_file.open(annotation_file) as cas_file:
                         cas = cassis.load_cas_from_json(cas_file)
                         annotations[subfolder_name] = cas
-                
+
                 projects.append(
                     {
                         "name": file_name,
