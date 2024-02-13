@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from tkinter import font
 import warnings
 
 import matplotlib.pyplot as plt
@@ -25,7 +26,7 @@ def change_width(page_width=80) -> None:
 def plot_multiples(projects, tag) -> None:
 
     st.title(f"Projects with tag: {tag}")
-    plt.figure(figsize=(24, 6), dpi=600)
+    plt.figure(figsize=(30, 6), dpi=800)
 
     pie_labels = [
         "New",
@@ -35,16 +36,16 @@ def plot_multiples(projects, tag) -> None:
         "Curation Finished",
     ]
     pie_colors = [
-        "#fc1c03",
-        "#fcbe03",
-        "#03fc17",
-        "#0373fc",
-        "#4e03fc",
+        'tab:red',
+        'cornflowerblue',
+        'royalblue',
+        'limegreen',
+        'forestgreen',
     ]
 
     for idx, project in enumerate(projects):
         plt.subplot(1, len(projects), idx+1)
-        plt.title(project["project_name"].split(".")[0], fontsize=15, fontweight="bold")
+        plt.title(project["project_name"].split(".")[0], fontsize=22, fontweight="bold")
         data_sizes = [
             project["doc_categories"]["NEW"],
             project["doc_categories"]["ANNOTATION_IN_PROGRESS"],
@@ -54,17 +55,17 @@ def plot_multiples(projects, tag) -> None:
         ]
 
         pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
-        
-        wedges, texts = plt.pie(
+
+        wedges, _ = plt.pie(
             data_sizes,
             colors=pie_colors,
-            startangle=140,
-            radius=2
+            startangle=90,
+            radius=2,
+            counterclock=False
             )
 
         plt.axis("equal")
 
-        # Create a legend with labels and percentages
         legend_labels = [
             f"{label} ({percent:.2f}% / {size} files)"
             for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
@@ -73,7 +74,7 @@ def plot_multiples(projects, tag) -> None:
             wedges,
             legend_labels,
             title="Categories",
-            fontsize=10,
+            fontsize=12,
             loc="center left",
             bbox_to_anchor=(1, 0.5),
         )
@@ -182,15 +183,11 @@ def main():
     unique_tags = get_unique_tags(projects)
     
     selected_tags = []
-    num_columns_per_row = 3 
+    columns = st.columns(len(unique_tags))
 
-    for i in range(0, len(unique_tags), num_columns_per_row):
-        row_tags = unique_tags[i:i+num_columns_per_row]
-        columns = st.columns(len(row_tags))
-
-        for col, tag in zip(columns, row_tags):
-            if col.checkbox(tag.capitalize(), key=tag):
-                selected_tags.append(tag)
+    for col, tag in zip(columns, unique_tags):
+        if col.checkbox(tag.capitalize(), key=tag):
+            selected_tags.append(tag)
 
     for tag in selected_tags:
         multi_projects = [project for project in projects if tag in project["project_tags"]]
