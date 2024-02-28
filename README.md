@@ -5,6 +5,7 @@ In case the project is part of a bigger project, the project progress can be exp
 
 ## Getting started
 Generate some plots for tyour INCEpTION projects with the following steps:
+- Make sure you have Python 3.11+
 - Clone this repo.
 - Navigate into the repo.
 - ``pip install .``
