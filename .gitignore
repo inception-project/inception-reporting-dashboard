@@ -1,6 +1,8 @@
 .idea
 inception_reports.egg-info
 __pycache__
-/inception_data
+/data
+/sample_project
 .vscode/settings.json
 *.ipynb
+/build
