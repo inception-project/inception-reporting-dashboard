@@ -1,4 +1,4 @@
-# Inception Reporting Dashboard
+# INCEpTION Reporting Dashboard
 This script will generate some plots for your INCEpTION project.
 In it current state, it can be used by the project manager on site to visualize different metrics regarding the progress of the project, and the type of annotations done.
 In case the project is part of a bigger project, the project progress can be exported to be sent to a project lead in a centralized location.
