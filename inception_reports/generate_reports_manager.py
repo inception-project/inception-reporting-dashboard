@@ -164,6 +164,17 @@ def plot_project_progress(project) -> None:
 
 
 def find_element_by_name(element_list, name):
+
+    """
+    Finds an element in the given element list by its name.
+
+    Args:
+        element_list (list): A list of elements to search through.
+        name (str): The name of the element to find.
+
+    Returns:
+        str: The UI name of the found element, or the last part of the name if not found.
+    """
     for element in element_list:
         if element.name == name:
             return element.uiName
@@ -171,6 +182,16 @@ def find_element_by_name(element_list, name):
 
 
 def get_type_counts(annotations):
+
+    """
+    Calculate the count of each type in the given annotations. Each annotation is a CAS object.
+
+    Args:
+        annotations (dict): A dictionary containing the annotations.
+
+    Returns:
+        dict: A dictionary containing the count of each type.
+    """
     count_dict = defaultdict(int)
 
     layerDefinition = annotations.popitem()[1].select(
@@ -197,6 +218,20 @@ def get_type_counts(annotations):
 
 
 def read_dir(dir_path: str) -> list[dict]:
+
+    """
+    Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
+
+    Args:
+        dir_path (str): The path to the directory containing the zip files.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary represents a project and contains the following keys:
+            - "name": The name of the zip file.
+            - "tags": A list of tags extracted from the project metadata.
+            - "documents": A list of source documents from the project metadata.
+            - "annotations": A dictionary mapping annotation subfolder names to their corresponding CAS objects.
+    """
     projects = []
 
     for file_name in os.listdir(dir_path):
@@ -240,6 +275,7 @@ def read_dir(dir_path: str) -> list[dict]:
                     }
                 )
 
+                # Clean up extracted files
                 shutil.rmtree(zip_path)
 
     return projects
