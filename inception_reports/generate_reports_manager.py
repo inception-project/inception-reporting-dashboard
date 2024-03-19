@@ -223,7 +223,9 @@ def read_dir(dir_path: str) -> list[dict]:
                 annotation_folders = [
                     name
                     for name in zip_file.namelist()
-                    if name.endswith("INITIAL_CAS.json")
+                    if name.startswith("annotation/")
+                    and name.endswith(".json")
+                    and not name.endswith("INITIAL_CAS.json")
                 ]
                 for annotation_file in annotation_folders:
                     subfolder_name = os.path.dirname(annotation_file).split("/")[1]
@@ -240,6 +242,7 @@ def read_dir(dir_path: str) -> list[dict]:
                     }
                 )
 
+                # Clean up extracted files
                 shutil.rmtree(zip_path)
 
     return projects
