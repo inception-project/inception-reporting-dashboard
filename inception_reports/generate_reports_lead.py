@@ -161,6 +161,15 @@ def read_dir(dir) -> list[dict]:
     return projects
 
 def get_unique_tags(projects):
+    """
+    Get a list of unique tags from a list of projects.
+
+    Args:
+        projects (list): A list of projects.
+
+    Returns:
+        list: A list of unique tags extracted from the projects.
+    """
     unique_tags = set()
     for project in projects:
         unique_tags.update(project.get('project_tags', []))
