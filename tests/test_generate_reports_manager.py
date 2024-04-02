@@ -4,7 +4,7 @@ import tempfile
 import zipfile
 from unittest.mock import Mock, patch
 
-from inception_reports.generate_reports_manager import *
+from inception_reports.generate_reports_manager import find_element_by_name, read_dir
 
 
 def test_find_element_by_name():
