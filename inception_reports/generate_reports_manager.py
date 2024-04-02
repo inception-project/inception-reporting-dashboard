@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -26,7 +25,6 @@ from collections import defaultdict
 import cassis
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import streamlit as st
 from matplotlib import gridspec
 
@@ -130,7 +128,7 @@ def plot_project_progress(project) -> None:
     total_annotations = sum(
         [len(cas_file.select_all()) for cas_file in project_annotations.values()]
     )
-    ax1.set_title(f"Documents' Status")
+    ax1.set_title("Documents Status")
 
     legend_labels = [
         f"{label} ({percent:.2f}% / {size} files)"
@@ -146,7 +144,7 @@ def plot_project_progress(project) -> None:
 
     ax2 = plt.subplot(gs[2])
     colors = plt.cm.tab10(range(len(type_counts.keys())))
-    ax2.set_title(f"Types of Annotations")
+    ax2.set_title("Types of Annotations")
     ax2.barh(
         list(type_counts.keys()),
         list(type_counts.values()),
@@ -164,6 +162,17 @@ def plot_project_progress(project) -> None:
 
 
 def find_element_by_name(element_list, name):
+
+    """
+    Finds an element in the given element list by its name.
+
+    Args:
+        element_list (list): A list of elements to search through.
+        name (str): The name of the element to find.
+
+    Returns:
+        str: The UI name of the found element, or the last part of the name if not found.
+    """
     for element in element_list:
         if element.name == name:
             return element.uiName
@@ -171,6 +180,16 @@ def find_element_by_name(element_list, name):
 
 
 def get_type_counts(annotations):
+
+    """
+    Calculate the count of each type in the given annotations. Each annotation is a CAS object.
+
+    Args:
+        annotations (dict): A dictionary containing the annotations.
+
+    Returns:
+        dict: A dictionary containing the count of each type.
+    """
     count_dict = defaultdict(int)
 
     layerDefinition = annotations.popitem()[1].select(
@@ -197,6 +216,20 @@ def get_type_counts(annotations):
 
 
 def read_dir(dir_path: str) -> list[dict]:
+
+    """
+    Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
+
+    Args:
+        dir_path (str): The path to the directory containing the zip files.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary represents a project and contains the following keys:
+            - "name": The name of the zip file.
+            - "tags": A list of tags extracted from the project metadata.
+            - "documents": A list of source documents from the project metadata.
+            - "annotations": A dictionary mapping annotation subfolder names to their corresponding CAS objects.
+    """
     projects = []
 
     for file_name in os.listdir(dir_path):
@@ -240,6 +273,7 @@ def read_dir(dir_path: str) -> list[dict]:
                     }
                 )
 
+                # Clean up extracted files
                 shutil.rmtree(zip_path)
 
     return projects
@@ -307,7 +341,7 @@ def main():
     parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
     args = parser.parse_args()
 
-    st.title(f"INCEpTION Berlin Projects Statistics")
+    st.title("INCEpTION Projects Statistics")
 
     projects = read_dir(args.projects_folder)
     projects.sort(key=lambda x: x["name"])
