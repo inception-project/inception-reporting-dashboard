@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -26,7 +25,6 @@ from collections import defaultdict
 import cassis
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import streamlit as st
 from matplotlib import gridspec
 
@@ -130,7 +128,7 @@ def plot_project_progress(project) -> None:
     total_annotations = sum(
         [len(cas_file.select_all()) for cas_file in project_annotations.values()]
     )
-    ax1.set_title(f"Documents' Status")
+    ax1.set_title("Documents Status")
 
     legend_labels = [
         f"{label} ({percent:.2f}% / {size} files)"
@@ -146,7 +144,7 @@ def plot_project_progress(project) -> None:
 
     ax2 = plt.subplot(gs[2])
     colors = plt.cm.tab10(range(len(type_counts.keys())))
-    ax2.set_title(f"Types of Annotations")
+    ax2.set_title("Types of Annotations")
     ax2.barh(
         list(type_counts.keys()),
         list(type_counts.values()),
@@ -343,7 +341,7 @@ def main():
     parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
     args = parser.parse_args()
 
-    st.title(f"INCEpTION Berlin Projects Statistics")
+    st.title("INCEpTION Projects Statistics")
 
     projects = read_dir(args.projects_folder)
     projects.sort(key=lambda x: x["name"])

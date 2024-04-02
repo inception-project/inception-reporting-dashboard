@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-from tkinter import font
 import warnings
 
 import matplotlib.pyplot as plt
@@ -184,7 +183,7 @@ def main():
     args = parser.parse_args()
 
     change_width(80)
-    st.title(f"INCEpTION Projects Progress")
+    st.title("INCEpTION Projects Progress")
 
     projects = read_dir(args.projects_folder)
     projects.sort(key=lambda x: x["project_name"])
