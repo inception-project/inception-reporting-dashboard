@@ -44,15 +44,16 @@ def test_read_dir_correctly_parses_zip_files(mock_rmtree, mock_is_zipfile, mock_
             zipf.writestr('exportedproject.json', json.dumps(project_meta))
 
             annotation_content = {"dummy": "content"}
-            zipf.writestr('annotations/annotation1/INITIAL_CAS.json', json.dumps(annotation_content))
+            zipf.writestr('annotation/doc1/annotator1.json', json.dumps(annotation_content))
 
         projects = read_dir(temp_dir)
 
         assert len(projects) == 1, "Should correctly parse zip files and extract project data"
         project = projects[0]
+        print(project['annotations'])
         assert project['name'] == zip_name, "Project name should match the zip file name"
         assert set(project['tags']) == {"tag1", "tag2"}, "Should extract correct tags from project metadata"
         assert project['documents'] == ["doc1.txt", "doc2.txt"], "Should list all source documents"
-        assert 'annotation1' in project['annotations'], "Should include annotations in the project data"
-        assert project['annotations']['annotation1'] == "MockCASObject", "Should load CAS objects for annotations"
+        assert 'doc1' in project['annotations'], "Should include annotations in the project data"
+        assert project['annotations']['doc1'] == "MockCASObject", "Should load CAS objects for annotations"
 
