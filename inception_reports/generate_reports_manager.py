@@ -20,7 +20,6 @@ import os
 import shutil
 import warnings
 import zipfile
-from collections import defaultdict
 
 import cassis
 import matplotlib.pyplot as plt
