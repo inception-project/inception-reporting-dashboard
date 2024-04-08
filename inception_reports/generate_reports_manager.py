@@ -148,12 +148,12 @@ def plot_project_progress(project) -> None:
     colors = plt.cm.tab10(range(len(type_counts.keys())))
     ax2.set_title("Types of Annotations")
     ax2.barh(
-        list(type_counts.keys()),
+        [f"{type} = {value}" for type, value in type_counts.items()],
         list(type_counts.values()),
         color=colors,
     )
-
     ax2.set_xlabel("Number of Annotations")
+    
     fig.suptitle(
         f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
         fontsize=16,
