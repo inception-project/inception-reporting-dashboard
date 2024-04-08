@@ -78,19 +78,21 @@ def plot_project_progress(project) -> None:
         if state in doc_categories:
             doc_categories[state] += 1
 
-    type_counts = get_type_counts(project_annotations)
-
     project_data = {
         "project_name": project_name,
         "project_tags": project_tags,
         "doc_categories": doc_categories,
     }
 
-    # st.title(f"Project: {project_name.split('.')[0]}")
-    if st.button(f"Export data for {project_name.split('.')[0]}"):
-        with open(f"{project_name.split('.')[0]}_data.json", "w") as output_file:
-            output_file.write(json.dumps(project_data, indent=4))
-        st.success(f"{project_name.split('.')[0]} data exported successfully ✅")
+
+
+    type_counts = get_type_counts(project_annotations)
+    selected_annotation_types = st.multiselect(
+        "Which annotation types would you like to see?",
+        list(type_counts.keys()),
+        list(type_counts.keys())
+    )
+    type_counts = {k: v for k, v in type_counts.items() if k in selected_annotation_types}
 
     data_sizes = [
         project_data["doc_categories"]["NEW"],
@@ -150,9 +152,8 @@ def plot_project_progress(project) -> None:
         list(type_counts.values()),
         color=colors,
     )
-    ax2.set_xscale("log")
 
-    ax2.set_xlabel("Number of Annotations (log scale)")
+    ax2.set_xlabel("Number of Annotations")
     fig.suptitle(
         f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
         fontsize=16,
@@ -160,9 +161,14 @@ def plot_project_progress(project) -> None:
     fig.tight_layout()
     st.pyplot()
 
+    # st.title(f"Project: {project_name.split('.')[0]}")
+    if st.button(f"Export data for {project_name.split('.')[0]}"):
+        with open(f"{project_name.split('.')[0]}_data.json", "w") as output_file:
+            output_file.write(json.dumps(project_data, indent=4))
+        st.success(f"{project_name.split('.')[0]} data exported successfully ✅")
+
 
 def find_element_by_name(element_list, name):
-
     """
     Finds an element in the given element list by its name.
 
@@ -180,7 +186,6 @@ def find_element_by_name(element_list, name):
 
 
 def get_type_counts(annotations):
-
     """
     Calculate the count of each type in the given annotations. Each annotation is a CAS object.
 
@@ -190,7 +195,7 @@ def get_type_counts(annotations):
     Returns:
         dict: A dictionary containing the count of each type.
     """
-    count_dict = defaultdict(int)
+    count_dict = {}
 
     layerDefinition = annotations.popitem()[1].select(
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
@@ -206,17 +211,16 @@ def get_type_counts(annotations):
         ]
 
         for type_name, count in type_names:
-            if count > 0:
-                count_dict[type_name] += count
-
-    aggregated_type_names = list(count_dict.items())
-    aggregated_type_names.sort(key=lambda x: x[1], reverse=True)
+            if type_name not in count_dict:
+                count_dict[type_name] = 0
+            count_dict[type_name] += count
+    count_dict = {k: v for k, v in count_dict.items() if v > 0}
+    count_dict = dict(sorted(count_dict.items(), key=lambda item: item[1]))
 
     return count_dict
 
 
 def read_dir(dir_path: str) -> list[dict]:
-
     """
     Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
 
@@ -349,6 +353,7 @@ def main():
     projects.sort(key=lambda x: x["name"])
     for project in projects:
         plot_project_progress(project)
+        break
 
 
 if __name__ == "__main__":
