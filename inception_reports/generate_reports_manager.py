@@ -88,7 +88,7 @@ def plot_project_progress(project) -> None:
 
     type_counts = get_type_counts(project_annotations)
     selected_annotation_types = st.multiselect(
-        "Which annotation types would you like to see?",
+        f"Which annotation types would you like to see for {project_name}?",
         list(type_counts.keys()),
         list(type_counts.keys())
     )
@@ -303,7 +303,7 @@ def login_to_inception(api_url, username, password):
         api_url = f"http://{api_url}"
     if st.sidebar.button("Login"):
         inception_client = Pycaprio(api_url, (username, password))
-        st.success("Login successful ✅")
+        st.sidebar.success("Login successful ✅")
         return True, inception_client
     return False, None
 
@@ -330,7 +330,9 @@ def select_method_to_import_data():
         inception_status, inception_client = login_to_inception(api_url, username, password)
         if inception_status:
             inception_projects = inception_client.api.projects()
+            st.sidebar.write("Following projects got imported:")
             for inception_project in inception_projects:
+                st.sidebar.write(inception_project.project_name)
                 project_export = inception_client.api.export_project(inception_project, "jsoncas")
                 with open(f"{os.path.expanduser('~')}/.inception_reports/projects/{inception_project}.zip", "wb") as f:
                     f.write(project_export)
