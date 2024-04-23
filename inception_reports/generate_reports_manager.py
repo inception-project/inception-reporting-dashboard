@@ -284,61 +284,6 @@ def read_dir(dir_path: str) -> list[dict]:
     return projects
 
 
-def read_dir_old(dir) -> list[dict]:
-    """
-    Read a file and return a pandas dataframe, regardless of the file type.
-
-    Parameters:
-        dir (str): The dir of INCEpTION projects.
-
-    Returns
-        List[dict]: A list of dicts containing the project data.
-    """
-    projects = []
-
-    for file in os.listdir(dir):
-        if zipfile.is_zipfile(os.path.join(dir, file)):
-            with zipfile.ZipFile(os.path.join(dir, file), "r") as zip_file:
-                project_meta = [
-                    name
-                    for name in zip_file.namelist()
-                    if name == "exportedproject.json"
-                ][0]
-                with zip_file.open(project_meta) as project_meta_file:
-                    project_meta = json.load(project_meta_file)
-                    project_tags = [
-                        w.strip("#")
-                        for w in project_meta["description"].split()
-                        if w.startswith("#")
-                    ]
-                    project_documents = project_meta["source_documents"]
-                annotations = {}
-                # only list the folders that start with "annotation"
-                annotation_folders = [
-                    name
-                    for name in zip_file.namelist()
-                    if name.startswith("annotation/")
-                    and name.endswith("INITIAL_CAS.json")
-                ]
-                if annotation_folders:
-                    for annotation_file in annotation_folders:
-                        subfolder_name = os.path.dirname(annotation_file).split("/")[1]
-                        with zip_file.open(annotation_file) as cas_file:
-                            cas = cassis.load_cas_from_json(cas_file)
-                            annotations[subfolder_name] = cas
-
-                projects.append(
-                    {
-                        "name": file,
-                        "tags": project_tags,
-                        "documents": project_documents,
-                        # "logs": logs,
-                        "annotations": annotations,
-                    }
-                )
-    return projects
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Generate plots for your INCEpTION project."
