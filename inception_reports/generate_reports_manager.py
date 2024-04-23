@@ -284,16 +284,25 @@ def read_dir(dir_path: str) -> list[dict]:
     return projects
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate plots for your INCEpTION project."
-    )
-    parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
-    args = parser.parse_args()
 
+def create_directory_in_home():
+    """
+    Creates a directory in the user's home directory for storing Inception reports.
+    """
+    home_dir = os.path.expanduser("~")
+    new_dir_path = os.path.join(home_dir, ".inception_reports")
+    try:
+        os.makedirs(new_dir_path)
+        os.makedirs(os.path.join(new_dir_path, "projects"))
+    except FileExistsError:
+        pass
+
+
+def main():
+    create_directory_in_home()
     st.title("INCEpTION Projects Statistics")
 
-    projects = read_dir(args.projects_folder)
+    projects = read_dir("project_folder")
     projects.sort(key=lambda x: x["name"])
     for project in projects:
         plot_project_progress(project)
