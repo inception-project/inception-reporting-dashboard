@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 from matplotlib import gridspec
+from pycaprio import Pycaprio
 
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
@@ -285,6 +286,60 @@ def read_dir(dir_path: str) -> list[dict]:
 
 
 
+def login_to_inception(api_url, username, password):
+    """
+    Logs in to the Inception API using the provided API URL, username, and password.
+
+    Args:
+        api_url (str): The URL of the Inception API.
+        username (str): The username for authentication.
+        password (str): The password for authentication.
+
+    Returns:
+        tuple: A tuple containing a boolean value indicating whether the login was successful and an instance of the Inception client.
+
+    """
+    if "http" not in api_url:
+        api_url = f"http://{api_url}"
+    if st.sidebar.button("Login"):
+        inception_client = Pycaprio(api_url, (username, password))
+        st.success("Login successful ✅")
+        return True, inception_client
+    return False, None
+
+
+
+def select_method_to_import_data():
+    """
+    Allows the user to select a method to import data for generating reports.
+    """
+    
+    method = st.sidebar.radio("Choose your method to import data:", ('Manually', 'API'), index=0)
+
+    if method == 'Manually':
+        st.sidebar.write("Please input the path to the folder containing the INCEpTION projects.")
+        projects_folder = st.sidebar.text_input("Projects Folder:", value="data/dresden_projects/")
+        if st.sidebar.button("Generate Reports"):
+            st.session_state['initialized'] = True
+            st.session_state['method'] = 'Manually'
+            st.session_state['projects_folder'] = projects_folder
+    elif method == 'API':
+        api_url = st.sidebar.text_input("Enter API URL:", "")
+        username = st.sidebar.text_input("Username:", "")
+        password = st.sidebar.text_input("Password:", type="password", value="")
+        inception_status, inception_client = login_to_inception(api_url, username, password)
+        if inception_status:
+            inception_projects = inception_client.api.projects()
+            for inception_project in inception_projects:
+                project_export = inception_client.api.export_project(inception_project, "jsoncas")
+                with open(f"{os.path.expanduser('~')}/.inception_reports/projects/{inception_project}.zip", "wb") as f:
+                    f.write(project_export)
+            st.session_state['initialized'] = True
+            st.session_state['method'] = 'API'
+            st.session_state['projects_folder'] = f"{os.path.expanduser('~')}/.inception_reports/projects"
+
+
+
 def create_directory_in_home():
     """
     Creates a directory in the user's home directory for storing Inception reports.
@@ -300,13 +355,17 @@ def create_directory_in_home():
 
 def main():
     create_directory_in_home()
+
     st.title("INCEpTION Projects Statistics")
 
-    projects = read_dir("project_folder")
-    projects.sort(key=lambda x: x["name"])
-    for project in projects:
-        plot_project_progress(project)
-        break
+    if 'initialized' not in st.session_state:
+        select_method_to_import_data()
+
+    if 'method' in st.session_state:
+        projects = read_dir(st.session_state.projects_folder)
+        projects.sort(key=lambda x: x["name"])
+        for project in projects:
+            plot_project_progress(project)
 
 
 if __name__ == "__main__":
