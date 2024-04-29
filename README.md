@@ -2,7 +2,7 @@
 
 This package will generate plots to track the progress of your INCEpTION project(s).
 
-In it current state, it can be used by the project manager on site to visualize different metrics regarding the progress of the project, and the type of annotations done.
+In its current state, it can be used by the project manager on site to visualize different metrics regarding the progress of the project, and the type of annotations done.
 
 In case the project is part of a bigger project, the project progress can be exported to be sent to a project lead in a centralized location who, in turn, can use the package to get an overview of the progress across the different projects and locations.
 
