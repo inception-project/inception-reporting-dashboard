@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import json
 import os
 import shutil
@@ -26,6 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 from matplotlib import gridspec
+from pycaprio import Pycaprio
 
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
@@ -87,7 +87,7 @@ def plot_project_progress(project) -> None:
 
     type_counts = get_type_counts(project_annotations)
     selected_annotation_types = st.multiselect(
-        "Which annotation types would you like to see?",
+        f"Which annotation types would you like to see for {project_name}?",
         list(type_counts.keys()),
         list(type_counts.keys())
     )
@@ -284,75 +284,89 @@ def read_dir(dir_path: str) -> list[dict]:
     return projects
 
 
-def read_dir_old(dir) -> list[dict]:
+
+def login_to_inception(api_url, username, password):
     """
-    Read a file and return a pandas dataframe, regardless of the file type.
+    Logs in to the Inception API using the provided API URL, username, and password.
 
-    Parameters:
-        dir (str): The dir of INCEpTION projects.
+    Args:
+        api_url (str): The URL of the Inception API.
+        username (str): The username for authentication.
+        password (str): The password for authentication.
 
-    Returns
-        List[dict]: A list of dicts containing the project data.
+    Returns:
+        tuple: A tuple containing a boolean value indicating whether the login was successful and an instance of the Inception client.
+
     """
-    projects = []
+    if "http" not in api_url:
+        api_url = f"http://{api_url}"
+    if st.sidebar.button("Login"):
+        inception_client = Pycaprio(api_url, (username, password))
+        st.sidebar.success("Login successful ✅")
+        return True, inception_client
+    return False, None
 
-    for file in os.listdir(dir):
-        if zipfile.is_zipfile(os.path.join(dir, file)):
-            with zipfile.ZipFile(os.path.join(dir, file), "r") as zip_file:
-                project_meta = [
-                    name
-                    for name in zip_file.namelist()
-                    if name == "exportedproject.json"
-                ][0]
-                with zip_file.open(project_meta) as project_meta_file:
-                    project_meta = json.load(project_meta_file)
-                    project_tags = [
-                        w.strip("#")
-                        for w in project_meta["description"].split()
-                        if w.startswith("#")
-                    ]
-                    project_documents = project_meta["source_documents"]
-                annotations = {}
-                # only list the folders that start with "annotation"
-                annotation_folders = [
-                    name
-                    for name in zip_file.namelist()
-                    if name.startswith("annotation/")
-                    and name.endswith("INITIAL_CAS.json")
-                ]
-                if annotation_folders:
-                    for annotation_file in annotation_folders:
-                        subfolder_name = os.path.dirname(annotation_file).split("/")[1]
-                        with zip_file.open(annotation_file) as cas_file:
-                            cas = cassis.load_cas_from_json(cas_file)
-                            annotations[subfolder_name] = cas
 
-                projects.append(
-                    {
-                        "name": file,
-                        "tags": project_tags,
-                        "documents": project_documents,
-                        # "logs": logs,
-                        "annotations": annotations,
-                    }
-                )
-    return projects
+
+def select_method_to_import_data():
+    """
+    Allows the user to select a method to import data for generating reports.
+    """
+    
+    method = st.sidebar.radio("Choose your method to import data:", ('Manually', 'API'), index=0)
+
+    if method == 'Manually':
+        st.sidebar.write("Please input the path to the folder containing the INCEpTION projects.")
+        projects_folder = st.sidebar.text_input("Projects Folder:", value="data/dresden_projects/")
+        if st.sidebar.button("Generate Reports"):
+            st.session_state['initialized'] = True
+            st.session_state['method'] = 'Manually'
+            st.session_state['projects_folder'] = projects_folder
+    elif method == 'API':
+        api_url = st.sidebar.text_input("Enter API URL:", "")
+        username = st.sidebar.text_input("Username:", "")
+        password = st.sidebar.text_input("Password:", type="password", value="")
+        inception_status, inception_client = login_to_inception(api_url, username, password)
+        if inception_status:
+            inception_projects = inception_client.api.projects()
+            st.sidebar.write("Following projects got imported:")
+            for inception_project in inception_projects:
+                st.sidebar.write(inception_project.project_name)
+                project_export = inception_client.api.export_project(inception_project, "jsoncas")
+                with open(f"{os.path.expanduser('~')}/.inception_reports/projects/{inception_project}.zip", "wb") as f:
+                    f.write(project_export)
+            st.session_state['initialized'] = True
+            st.session_state['method'] = 'API'
+            st.session_state['projects_folder'] = f"{os.path.expanduser('~')}/.inception_reports/projects"
+
+
+
+def create_directory_in_home():
+    """
+    Creates a directory in the user's home directory for storing Inception reports.
+    """
+    home_dir = os.path.expanduser("~")
+    new_dir_path = os.path.join(home_dir, ".inception_reports")
+    try:
+        os.makedirs(new_dir_path)
+        os.makedirs(os.path.join(new_dir_path, "projects"))
+    except FileExistsError:
+        pass
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate plots for your INCEpTION project."
-    )
-    parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
-    args = parser.parse_args()
-
+    create_directory_in_home()
+    
     st.title("INCEpTION Projects Statistics")
 
-    projects = read_dir(args.projects_folder)
-    projects.sort(key=lambda x: x["name"])
-    for project in projects:
-        plot_project_progress(project)
-        break
+    if 'initialized' not in st.session_state:
+        select_method_to_import_data()
+
+    if 'method' in st.session_state:
+        projects = read_dir(st.session_state.projects_folder)
+        projects.sort(key=lambda x: x["name"])
+        for project in projects:
+            plot_project_progress(project)
 
 
 if __name__ == "__main__":

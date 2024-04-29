@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib",
     "numpy",
     "dkpro-cassis",
+    "pycaprio",
 ]
 
 [project.scripts]

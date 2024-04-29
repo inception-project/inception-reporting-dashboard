@@ -1,4 +1,19 @@
-import argparse
+# Licensed to the Technische Universität Darmstadt under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The Technische Universität Darmstadt
+# licenses this file to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.
+
+# http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import json
 import os
 import warnings
@@ -175,31 +190,41 @@ def get_unique_tags(projects):
     return list(unique_tags)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate plots for your INCEpTION project."
-    )
-    parser.add_argument("projects_folder", help="The folder of INCEpTION projects.")
-    args = parser.parse_args()
+def select_data_folder():
+    """
+    Generate a sidebar widget to select the data folder containing the INCEpTION projects.
+    """
 
+    st.sidebar.write("Please input the path to the folder containing the INCEpTION projects.")
+    projects_folder = st.sidebar.text_input("Projects Folder:", value="")
+    if st.sidebar.button("Generate Reports"):
+        st.session_state['initialized'] = True
+        st.session_state['projects_folder'] = projects_folder
+
+def main():
     change_width(80)
     st.title("INCEpTION Projects Progress")
 
-    projects = read_dir(args.projects_folder)
-    projects.sort(key=lambda x: x["project_name"])
+    select_data_folder()
 
-    unique_tags = get_unique_tags(projects)
-    
-    selected_tags = []
-    columns = st.columns(len(unique_tags))
+    projects = []
+    if 'projects_folder' in st.session_state:
+        projects = read_dir(st.session_state.projects_folder)
+        projects.sort(key=lambda x: x["project_name"])
 
-    for col, tag in zip(columns, unique_tags):
-        if col.checkbox(tag.capitalize(), key=tag):
-            selected_tags.append(tag)
+    if projects:
+        unique_tags = get_unique_tags(projects)
+        
+        selected_tags = []
+        columns = st.columns(len(unique_tags))
 
-    for tag in selected_tags:
-        multi_projects = [project for project in projects if tag in project["project_tags"]]
-        plot_multiples(multi_projects, tag)
+        for col, tag in zip(columns, unique_tags):
+            if col.checkbox(tag.capitalize(), key=tag):
+                selected_tags.append(tag)
+
+        for tag in selected_tags:
+            multi_projects = [project for project in projects if tag in project["project_tags"]]
+            plot_multiples(multi_projects, tag)
 
 
 if __name__ == "__main__":
