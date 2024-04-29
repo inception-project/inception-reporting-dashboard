@@ -356,7 +356,7 @@ def create_directory_in_home():
 
 def main():
     create_directory_in_home()
-
+    
     st.title("INCEpTION Projects Statistics")
 
     if 'initialized' not in st.session_state:
