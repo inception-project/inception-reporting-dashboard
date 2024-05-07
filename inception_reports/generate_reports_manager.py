@@ -26,6 +26,7 @@ import numpy as np
 import streamlit as st
 from matplotlib import gridspec
 from pycaprio import Pycaprio
+from datetime import datetime
 
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
@@ -59,7 +60,7 @@ def plot_project_progress(project) -> None:
     """
 
     # df = project["logs"]
-    project_name = project["name"]
+    project_name = project["name"].strip(".zip")
     project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
@@ -160,11 +161,7 @@ def plot_project_progress(project) -> None:
     fig.tight_layout()
     st.pyplot()
 
-    # st.title(f"Project: {project_name.split('.')[0]}")
-    if st.button(f"Export data for {project_name.split('.')[0]}"):
-        with open(f"{project_name.split('.')[0]}_data.json", "w") as output_file:
-            output_file.write(json.dumps(project_data, indent=4))
-        st.success(f"{project_name.split('.')[0]} data exported successfully ✅")
+    export_data(project_data)
 
 
 def find_element_by_name(element_list, name):
@@ -343,7 +340,7 @@ def select_method_to_import_data():
 
 def create_directory_in_home():
     """
-    Creates a directory in the user's home directory for storing Inception reports.
+    Creates a directory in the user's home directory for storing Inception reports imported over the API.
     """
     home_dir = os.path.expanduser("~")
     new_dir_path = os.path.join(home_dir, ".inception_reports")
@@ -353,6 +350,19 @@ def create_directory_in_home():
     except FileExistsError:
         pass
 
+
+def export_data(project_data):
+    current_date = datetime.now().strftime("%Y_%m_%d")
+    directory_name = f'{st.session_state.projects_folder.strip("/").split("/")[-1]}_data_{current_date}'
+    output_directory = os.path.join(os.getcwd(), directory_name)
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
+    
+    project_name = project_data["project_name"]
+    with open(f"{output_directory}/{project_name.split('.')[0]}_{current_date}_data.json", "w") as output_file:
+        json.dump(project_data, output_file, indent=4)
+    st.success(f"{project_name.split('.')[0]} documents status exported successfully ✅")
 
 def main():
     create_directory_in_home()
