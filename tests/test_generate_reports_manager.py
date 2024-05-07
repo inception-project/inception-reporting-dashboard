@@ -14,13 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import json
 import os
 import tempfile
 import zipfile
 from unittest.mock import Mock, patch
+from datetime import datetime
 
-from inception_reports.generate_reports_manager import find_element_by_name, read_dir
+from inception_reports.generate_reports_manager import find_element_by_name, read_dir, export_data
 
 
 def test_find_element_by_name():
@@ -73,3 +75,28 @@ def test_read_dir_correctly_parses_zip_files(mock_rmtree, mock_is_zipfile, mock_
         assert 'doc1' in project['annotations'], "Should include annotations in the project data"
         assert project['annotations']['doc1'] == "MockCASObject", "Should load CAS objects for annotations"
 
+
+def test_export_data(tmpdir):
+    project_data = {
+        "project_name": "project1",
+        "project_tags": ["tag1", "tag2"],
+        "doc_categories": {
+            "NEW": 10,
+            "ANNOTATION_IN_PROGRESS": 5,
+            "ANNOTATION_FINISHED": 15,
+            "CURATION_IN_PROGRESS": 3,
+            "CURATION_FINISHED": 7,
+        },
+    }
+
+    current_date = datetime.now().strftime("%Y_%m_%d")
+    output_directory = tmpdir.mkdir("output")
+    export_data(project_data, output_directory)
+
+    expected_file_path = os.path.join(output_directory, f"exported_data_{current_date}/{project_data['project_name']}_data_{current_date}.json")
+    assert os.path.exists(expected_file_path)
+
+    with open(expected_file_path, "r") as output_file:
+        exported_data = json.load(output_file)
+
+    assert exported_data == project_data

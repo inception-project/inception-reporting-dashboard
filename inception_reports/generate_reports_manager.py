@@ -351,16 +351,26 @@ def create_directory_in_home():
         pass
 
 
-def export_data(project_data):
+def export_data(project_data, output_directory=None):
+    """
+    Export project data to a JSON file, and store it in a directory named after the project and the current date.
+
+    Parameters:
+        project_data (dict): The data to be exported.
+    """
     current_date = datetime.now().strftime("%Y_%m_%d")
-    directory_name = f'{st.session_state.projects_folder.strip("/").split("/")[-1]}_data_{current_date}'
-    output_directory = os.path.join(os.getcwd(), directory_name)
+    directory_name = f'exported_data_{current_date}'
+
+    if output_directory is None:
+        output_directory = os.path.join(os.getcwd(), directory_name)
+    else:
+        output_directory = os.path.join(output_directory, directory_name)
+    
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
 
-    
     project_name = project_data["project_name"]
-    with open(f"{output_directory}/{project_name.split('.')[0]}_{current_date}_data.json", "w") as output_file:
+    with open(f"{output_directory}/{project_name.split('.')[0]}_data_{current_date}.json", "w") as output_file:
         json.dump(project_data, output_file, indent=4)
     st.success(f"{project_name.split('.')[0]} documents status exported successfully ✅")
 
