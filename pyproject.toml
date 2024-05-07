@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "inception_reports"
 description = "Generate plots that report the progress of an INCEpTION project."
-version = "0.1"
+version = "0.2"
 authors = [
     { name = "Serwar Basch", email = "serwar.basch@tu-darmstadt.de" }
 ]
