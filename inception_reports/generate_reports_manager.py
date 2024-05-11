@@ -1,3 +1,4 @@
+
 # Licensed to the Technische Universität Darmstadt under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -14,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
 import shutil
@@ -27,6 +29,7 @@ import streamlit as st
 from matplotlib import gridspec
 from pycaprio import Pycaprio
 from datetime import datetime
+import time
 
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
@@ -35,6 +38,13 @@ st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
     layout="centered",
     initial_sidebar_state=st.session_state.setdefault("sidebar_state","expanded"))
+if(st.session_state.get("flag")):
+    st.session_state.sidebar_state = st.session_state.flag
+    del st.session_state.flag # or you could do => st.session_state.flag = False
+    time.sleep(0.01)
+    st.rerun()
+
+
 css = """
 <style>
     section.main > div {max-width:50%}
@@ -90,6 +100,7 @@ def plot_project_progress(project) -> None:
 
 
     type_counts = get_type_counts(project_annotations)
+    
     selected_annotation_types = st.multiselect(
         f"Which annotation types would you like to see for {project_name}?",
         list(type_counts.keys()),
@@ -300,11 +311,23 @@ def login_to_inception(api_url, username, password):
     """
     if "http" not in api_url:
         api_url = f"http://{api_url}"
-    if st.sidebar.button("Login"):
+    button = st.sidebar.button("Login")
+    if button:
         inception_client = Pycaprio(api_url, (username, password))
         st.sidebar.success("Login successful ✅")
+        button = False
         return True, inception_client
     return False, None
+
+
+
+def set_sidebar_state(value):
+    if(st.session_state.sidebar_state == value):
+        st.session_state.flag = value
+        st.session_state.sidebar_state = "expanded" if value == "collapsed" else "collapsed"
+    else:
+        st.session_state.sidebar_state = value
+    st.rerun()
 
 
 
@@ -320,9 +343,9 @@ def select_method_to_import_data():
         projects_folder = st.sidebar.text_input("Projects Folder:", value="data/dresden_projects/")
         button = st.sidebar.button("Generate Reports")
         if button:
-            st.session_state['projects_folder'] = projects_folder
             st.session_state['initialized'] = True
             st.session_state['method'] = 'Manually'
+            st.session_state["projects"] = read_dir(projects_folder)
             button = False
             set_sidebar_state("collapsed")
     elif method == 'API':
@@ -340,8 +363,10 @@ def select_method_to_import_data():
                     f.write(project_export)
             st.session_state['initialized'] = True
             st.session_state['method'] = 'API'
-            st.session_state['projects_folder'] = f"{os.path.expanduser('~')}/.inception_reports/projects"
+            st.session_state["projects"] = read_dir(projects_folder)
             set_sidebar_state("collapsed")
+            
+
 
 
 
@@ -381,33 +406,16 @@ def export_data(project_data, output_directory=None):
         json.dump(project_data, output_file, indent=4)
     st.success(f"{project_name.split('.')[0]} documents status exported successfully ✅")
 
-def set_sidebar_state(value):
-    """
-    Sets the state of the sidebar, either expanded or collapsed.
-
-    Parameters:
-        value (str): The value to set the sidebar state to, either "expanded" or "collapsed".
-    """
-    if(st.session_state.sidebar_state == value):
-        st.session_state.flag = value
-        st.session_state.sidebar_state = "expanded" if value == "collapsed" else "collapsed"
-    else:
-        st.session_state.sidebar_state = value
-    st.rerun()
-
-
 def main():
-    st.title("INCEpTION Projects Statistics")
     create_directory_in_home()
 
-    
+    st.title("INCEpTION Projects Statistics")
 
     if 'initialized' not in st.session_state:
         select_method_to_import_data()
-
-    if 'method' in st.session_state:
-        projects = read_dir(st.session_state.projects_folder)
-        projects.sort(key=lambda x: x["name"])
+    
+    if 'method' in st.session_state and 'projects' in st.session_state:
+        projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
         for project in projects:
             plot_project_progress(project)
 
