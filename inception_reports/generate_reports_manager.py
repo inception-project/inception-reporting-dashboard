@@ -31,7 +31,10 @@ from datetime import datetime
 # suppress deprecation warnings related to the use of the pyplot
 # can be solved by sending the fig instead of the plt to streamlit
 st.set_option("deprecation.showPyplotGlobalUse", False)
-st.set_page_config(page_title="INCEpTION Reporting Dashboard", layout="centered")
+st.set_page_config(
+    page_title="INCEpTION Reporting Dashboard",
+    layout="centered",
+    initial_sidebar_state=st.session_state.setdefault("sidebar_state","expanded"))
 css = """
 <style>
     section.main > div {max-width:50%}
@@ -315,10 +318,13 @@ def select_method_to_import_data():
     if method == 'Manually':
         st.sidebar.write("Please input the path to the folder containing the INCEpTION projects.")
         projects_folder = st.sidebar.text_input("Projects Folder:", value="data/dresden_projects/")
-        if st.sidebar.button("Generate Reports"):
+        button = st.sidebar.button("Generate Reports")
+        if button:
+            st.session_state['projects_folder'] = projects_folder
             st.session_state['initialized'] = True
             st.session_state['method'] = 'Manually'
-            st.session_state['projects_folder'] = projects_folder
+            button = False
+            set_sidebar_state("collapsed")
     elif method == 'API':
         api_url = st.sidebar.text_input("Enter API URL:", "")
         username = st.sidebar.text_input("Username:", "")
@@ -335,6 +341,7 @@ def select_method_to_import_data():
             st.session_state['initialized'] = True
             st.session_state['method'] = 'API'
             st.session_state['projects_folder'] = f"{os.path.expanduser('~')}/.inception_reports/projects"
+            set_sidebar_state("collapsed")
 
 
 
@@ -374,10 +381,26 @@ def export_data(project_data, output_directory=None):
         json.dump(project_data, output_file, indent=4)
     st.success(f"{project_name.split('.')[0]} documents status exported successfully ✅")
 
+def set_sidebar_state(value):
+    """
+    Sets the state of the sidebar, either expanded or collapsed.
+
+    Parameters:
+        value (str): The value to set the sidebar state to, either "expanded" or "collapsed".
+    """
+    if(st.session_state.sidebar_state == value):
+        st.session_state.flag = value
+        st.session_state.sidebar_state = "expanded" if value == "collapsed" else "collapsed"
+    else:
+        st.session_state.sidebar_state = value
+    st.rerun()
+
+
 def main():
-    create_directory_in_home()
-    
     st.title("INCEpTION Projects Statistics")
+    create_directory_in_home()
+
+    
 
     if 'initialized' not in st.session_state:
         select_method_to_import_data()
