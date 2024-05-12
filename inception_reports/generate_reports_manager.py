@@ -56,178 +56,28 @@ warnings.filterwarnings(
 )
 
 
-def plot_project_progress(project) -> None:
+def create_directory_in_home():
     """
-    Generate a visual representation of project progress based on a DataFrame of log data.
-
-    This function takes a DataFrame containing log data and generates
-    visualizations to represent the progress of different documents. It calculates the
-    total time spent on each document, divides it into sessions based on a specified
-    threshold, and displays a pie chart showing the percentage of finished and remaining
-    documents, along with a bar chart showing the total time spent on finished documents
-    compared to the estimated time for remaining documents.
-
-    Parameters:
-        project (dict): A dict containing project information, namely the name, tags, annotations, and logs.
-
+    Creates a directory in the user's home directory for storing Inception reports imported over the API.
     """
-
-    # df = project["logs"]
-    project_name = project["name"].strip(".zip")
-    project_tags = project["tags"]
-    project_annotations = project["annotations"]
-    project_documents = project["documents"]
-
-    doc_categories = {
-        "ANNOTATION_IN_PROGRESS": 0,
-        "ANNOTATION_FINISHED": 0,
-        "CURATION_IN_PROGRESS": 0,
-        "CURATION_FINISHED": 0,
-        "NEW": 0,
-    }
-
-    for doc in project_documents:
-        state = doc["state"]
-        if state in doc_categories:
-            doc_categories[state] += 1
-
-    project_data = {
-        "project_name": project_name,
-        "project_tags": project_tags,
-        "doc_categories": doc_categories,
-    }
-
-    type_counts = get_type_counts(project_annotations)
-
-    selected_annotation_types = st.multiselect(
-        f"Which annotation types would you like to see for {project_name}?",
-        list(type_counts.keys()),
-        list(type_counts.keys()),
-    )
-    type_counts = {
-        k: v for k, v in type_counts.items() if k in selected_annotation_types
-    }
-
-    data_sizes = [
-        project_data["doc_categories"]["NEW"],
-        project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
-        project_data["doc_categories"]["ANNOTATION_FINISHED"],
-        project_data["doc_categories"]["CURATION_IN_PROGRESS"],
-        project_data["doc_categories"]["CURATION_FINISHED"],
-    ]
-
-    pie_labels = [
-        "New",
-        "Annotation In Progress",
-        "Annotation Finished",
-        "Curation In Progress",
-        "Curation Finished",
-    ]
-    pie_colors = [
-        "tab:red",
-        "cornflowerblue",
-        "royalblue",
-        "limegreen",
-        "forestgreen",
-    ]
-    pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
-    fig = plt.figure(figsize=(15, 9))
-    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 0.01, 1])
-
-    ax1 = plt.subplot(gs[0])
-
-    wedges, _ = ax1.pie(
-        data_sizes, colors=pie_colors, startangle=90, radius=2, counterclock=False
-    )
-
-    ax1.axis("equal")
-    total_annotations = sum(
-        [len(cas_file.select_all()) for cas_file in project_annotations.values()]
-    )
-    ax1.set_title("Documents Status")
-
-    legend_labels = [
-        f"{label} ({percent:.2f}% / {size} files)"
-        for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
-    ]
-    ax1.legend(
-        wedges,
-        legend_labels,
-        title="Categories",
-        loc="center left",
-        bbox_to_anchor=(1, 0.5),
-    )
-
-    ax2 = plt.subplot(gs[2])
-    colors = plt.cm.tab10(range(len(type_counts.keys())))
-    ax2.set_title("Types of Annotations")
-    ax2.barh(
-        [f"{type} = {value}" for type, value in type_counts.items()],
-        list(type_counts.values()),
-        color=colors,
-    )
-    ax2.set_xlabel("Number of Annotations")
-
-    fig.suptitle(
-        f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
-        fontsize=16,
-    )
-    fig.tight_layout()
-    st.pyplot()
-
-    export_data(project_data)
+    home_dir = os.path.expanduser("~")
+    new_dir_path = os.path.join(home_dir, ".inception_reports")
+    try:
+        os.makedirs(new_dir_path)
+        os.makedirs(os.path.join(new_dir_path, "projects"))
+    except FileExistsError:
+        pass
 
 
-def find_element_by_name(element_list, name):
-    """
-    Finds an element in the given element list by its name.
-
-    Args:
-        element_list (list): A list of elements to search through.
-        name (str): The name of the element to find.
-
-    Returns:
-        str: The UI name of the found element, or the last part of the name if not found.
-    """
-    for element in element_list:
-        if element.name == name:
-            return element.uiName
-    return name.split(".")[-1]
-
-
-def get_type_counts(annotations):
-    """
-    Calculate the count of each type in the given annotations. Each annotation is a CAS object.
-
-    Args:
-        annotations (dict): A dictionary containing the annotations.
-
-    Returns:
-        dict: A dictionary containing the count of each type.
-    """
-    count_dict = {}
-
-    layerDefinition = annotations.popitem()[1].select(
-        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
-    )
-    for doc in annotations:
-        type_names = [
-            (
-                find_element_by_name(layerDefinition, t.name),
-                len(annotations[doc].select(t.name)),
-            )
-            for t in annotations[doc].typesystem.get_types()
-            if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
-        ]
-
-        for type_name, count in type_names:
-            if type_name not in count_dict:
-                count_dict[type_name] = 0
-            count_dict[type_name] += count
-    count_dict = {k: v for k, v in count_dict.items() if v > 0}
-    count_dict = dict(sorted(count_dict.items(), key=lambda item: item[1]))
-
-    return count_dict
+def set_sidebar_state(value):
+    if st.session_state.sidebar_state == value:
+        st.session_state.flag = value
+        st.session_state.sidebar_state = (
+            "expanded" if value == "collapsed" else "collapsed"
+        )
+    else:
+        st.session_state.sidebar_state = value
+    st.rerun()
 
 
 def translate_tag(tag):
@@ -717,6 +567,7 @@ def translate_tag(tag):
     else:
         return tag
 
+
 def read_dir(dir_path: str) -> list[dict]:
     """
     Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
@@ -806,17 +657,6 @@ def login_to_inception(api_url, username, password):
     return False, None
 
 
-def set_sidebar_state(value):
-    if st.session_state.sidebar_state == value:
-        st.session_state.flag = value
-        st.session_state.sidebar_state = (
-            "expanded" if value == "collapsed" else "collapsed"
-        )
-    else:
-        st.session_state.sidebar_state = value
-    st.rerun()
-
-
 def select_method_to_import_data():
     """
     Allows the user to select a method to import data for generating reports.
@@ -866,17 +706,56 @@ def select_method_to_import_data():
             set_sidebar_state("collapsed")
 
 
-def create_directory_in_home():
+def find_element_by_name(element_list, name):
     """
-    Creates a directory in the user's home directory for storing Inception reports imported over the API.
+    Finds an element in the given element list by its name.
+
+    Args:
+        element_list (list): A list of elements to search through.
+        name (str): The name of the element to find.
+
+    Returns:
+        str: The UI name of the found element, or the last part of the name if not found.
     """
-    home_dir = os.path.expanduser("~")
-    new_dir_path = os.path.join(home_dir, ".inception_reports")
-    try:
-        os.makedirs(new_dir_path)
-        os.makedirs(os.path.join(new_dir_path, "projects"))
-    except FileExistsError:
-        pass
+    for element in element_list:
+        if element.name == name:
+            return element.uiName
+    return name.split(".")[-1]
+
+
+def get_type_counts(annotations):
+    """
+    Calculate the count of each type in the given annotations. Each annotation is a CAS object.
+
+    Args:
+        annotations (dict): A dictionary containing the annotations.
+
+    Returns:
+        dict: A dictionary containing the count of each type.
+    """
+    count_dict = {}
+
+    layerDefinition = annotations.popitem()[1].select(
+        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+    )
+    for doc in annotations:
+        type_names = [
+            (
+                find_element_by_name(layerDefinition, t.name),
+                len(annotations[doc].select(t.name)),
+            )
+            for t in annotations[doc].typesystem.get_types()
+            if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+        ]
+
+        for type_name, count in type_names:
+            if type_name not in count_dict:
+                count_dict[type_name] = 0
+            count_dict[type_name] += count
+    count_dict = {k: v for k, v in count_dict.items() if v > 0}
+    count_dict = dict(sorted(count_dict.items(), key=lambda item: item[1]))
+
+    return count_dict
 
 
 def export_data(project_data, output_directory=None):
@@ -905,6 +784,128 @@ def export_data(project_data, output_directory=None):
     st.success(
         f"{project_name.split('.')[0]} documents status exported successfully ✅"
     )
+
+
+def plot_project_progress(project) -> None:
+    """
+    Generate a visual representation of project progress based on a DataFrame of log data.
+
+    This function takes a DataFrame containing log data and generates
+    visualizations to represent the progress of different documents. It calculates the
+    total time spent on each document, divides it into sessions based on a specified
+    threshold, and displays a pie chart showing the percentage of finished and remaining
+    documents, along with a bar chart showing the total time spent on finished documents
+    compared to the estimated time for remaining documents.
+
+    Parameters:
+        project (dict): A dict containing project information, namely the name, tags, annotations, and logs.
+
+    """
+
+    # df = project["logs"]
+    project_name = project["name"].strip(".zip")
+    project_tags = project["tags"]
+    project_annotations = project["annotations"]
+    project_documents = project["documents"]
+
+    doc_categories = {
+        "ANNOTATION_IN_PROGRESS": 0,
+        "ANNOTATION_FINISHED": 0,
+        "CURATION_IN_PROGRESS": 0,
+        "CURATION_FINISHED": 0,
+        "NEW": 0,
+    }
+
+    for doc in project_documents:
+        state = doc["state"]
+        if state in doc_categories:
+            doc_categories[state] += 1
+
+    project_data = {
+        "project_name": project_name,
+        "project_tags": project_tags,
+        "doc_categories": doc_categories,
+    }
+
+    type_counts = get_type_counts(project_annotations)
+
+    selected_annotation_types = st.multiselect(
+        f"Which annotation types would you like to see for {project_name}?",
+        list(type_counts.keys()),
+        list(type_counts.keys()),
+    )
+    type_counts = {
+        k: v for k, v in type_counts.items() if k in selected_annotation_types
+    }
+
+    data_sizes = [
+        project_data["doc_categories"]["NEW"],
+        project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
+        project_data["doc_categories"]["ANNOTATION_FINISHED"],
+        project_data["doc_categories"]["CURATION_IN_PROGRESS"],
+        project_data["doc_categories"]["CURATION_FINISHED"],
+    ]
+
+    pie_labels = [
+        "New",
+        "Annotation In Progress",
+        "Annotation Finished",
+        "Curation In Progress",
+        "Curation Finished",
+    ]
+    pie_colors = [
+        "tab:red",
+        "cornflowerblue",
+        "royalblue",
+        "limegreen",
+        "forestgreen",
+    ]
+    pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
+    fig = plt.figure(figsize=(15, 9))
+    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 0.01, 1])
+
+    ax1 = plt.subplot(gs[0])
+
+    wedges, _ = ax1.pie(
+        data_sizes, colors=pie_colors, startangle=90, radius=2, counterclock=False
+    )
+
+    ax1.axis("equal")
+    total_annotations = sum(
+        [len(cas_file.select_all()) for cas_file in project_annotations.values()]
+    )
+    ax1.set_title("Documents Status")
+
+    legend_labels = [
+        f"{label} ({percent:.2f}% / {size} files)"
+        for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
+    ]
+    ax1.legend(
+        wedges,
+        legend_labels,
+        title="Categories",
+        loc="center left",
+        bbox_to_anchor=(1, 0.5),
+    )
+
+    ax2 = plt.subplot(gs[2])
+    colors = plt.cm.tab10(range(len(type_counts.keys())))
+    ax2.set_title("Types of Annotations")
+    ax2.barh(
+        [f"{type} = {value}" for type, value in type_counts.items()],
+        list(type_counts.values()),
+        color=colors,
+    )
+    ax2.set_xlabel("Number of Annotations")
+
+    fig.suptitle(
+        f'{project_name.split(".")[0]}\nTotal Annotations: {total_annotations}',
+        fontsize=16,
+    )
+    fig.tight_layout()
+    st.pyplot()
+
+    export_data(project_data)
 
 
 def main():
