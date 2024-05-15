@@ -17,7 +17,7 @@
 import os
 from unittest.mock import MagicMock, patch
 
-from inception_reports.generate_reports_lead import get_unique_tags, plot_project_progress, read_dir
+from inception_reports.generate_reports_lead import get_unique_tags, plot_multiples, read_dir
 
 
 def test_get_unique_tags():
@@ -107,5 +107,5 @@ def test_plot_project_progress():
         },
     }
 
-    plot_project_progress(project_data)
+    plot_multiples([project_data], ["tag1", "tag2", "tag3"])
     assert True, "Should not raise any exceptions"

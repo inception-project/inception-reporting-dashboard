@@ -14,7 +14,7 @@ requires-python = ">=3.11"
 dependencies = [
     "streamlit",
     "pandas",
-    "matplotlib",
+    "plotly",
     "numpy",
     "dkpro-cassis",
     "pycaprio",
