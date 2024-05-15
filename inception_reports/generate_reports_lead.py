@@ -14,149 +14,153 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
-import warnings
+import time
 
-import matplotlib.pyplot as plt
-import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
-# suppress deprecation warnings related to the use of the pyplot
-# can be solved by sending the fig instead of the plt to streamlit
-st.set_option("deprecation.showPyplotGlobalUse", False)
-st.set_page_config(page_title="INCEpTION Reporting Dashboard", layout="centered")
-warnings.filterwarnings("ignore", message="Boolean Series key will be reindexed to match DataFrame index")
+st.set_page_config(
+    page_title="INCEpTION Reporting Dashboard",
+    layout="centered",
+    initial_sidebar_state=st.session_state.setdefault("sidebar_state", "expanded"),
+)
+
+if st.session_state.get("flag"):
+    st.session_state.sidebar_state = st.session_state.flag
+    del st.session_state.flag  # or you could do => st.session_state.flag = False
+    time.sleep(0.01)
+    st.rerun()
+
+
+def startup():
+
+    st.markdown(
+        """
+        <style>
+        body {
+            cursor: url('https://cdn-icons-png.flaticon.com/64/5198/5198523.png'), auto !important;
+        }
+
+        rect.legendtoggle {
+            cursor: url('https://cdn-icons-png.flaticon.com/32/12179/12179477.png'), pointer !important;
+        }
+
+        rect.nsewdrag.drag {
+            cursor: url('https://cdn-icons-png.flaticon.com/32/10263/10263093.png'), pointer !important;
+        }
+        </style>
+
+        <style>
+        .block-container {
+            padding-top: 0rem;
+            padding-bottom: 5rem;
+            padding-left: 5rem;
+            padding-right: 5rem;
+        }
+        </style>
+
+        <style>
+        .block-container {
+            padding-top: 0rem;
+            padding-bottom: 5rem;
+            padding-left: 5rem;
+            padding-right: 5rem;
+        }
+        </style>
+
+        <style>
+        div[data-testid="stFullScreenFrame"] {
+            margin-top: 1rem;
+            border: thick double #999999;
+            box-shadow: 0px 0px 10px #999999;
+        }
+        </style>
+
+        <style>
+        section.main > div {max-width:90%}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def set_sidebar_state(value):
+    if st.session_state.sidebar_state == value:
+        st.session_state.flag = value
+        st.session_state.sidebar_state = (
+            "expanded" if value == "collapsed" else "collapsed"
+        )
+    else:
+        st.session_state.sidebar_state = value
+    st.rerun()
 
 
 def change_width(page_width=80) -> None:
-    css=f'''
+    css = f"""
     <style>
     section.main > div {{max-width:{page_width}%}}
     </style>
-    '''
+    """
     st.markdown(css, unsafe_allow_html=True)
+
 
 def plot_multiples(projects, tag) -> None:
 
-    st.title(f"Projects with tag: {tag}")
-    plt.figure(figsize=(30, 6), dpi=800)
-
     pie_labels = [
-        "New",
         "Annotation In Progress",
         "Annotation Finished",
         "Curation In Progress",
         "Curation Finished",
-    ]
-    pie_colors = [
-        'tab:red',
-        'cornflowerblue',
-        'royalblue',
-        'limegreen',
-        'forestgreen',
+        "New",
     ]
 
+    fig = make_subplots(
+        rows=1, cols=len(projects), specs=[[{"type": "domain"}] * len(projects)]
+    )
     for idx, project in enumerate(projects):
-        plt.subplot(1, len(projects), idx+1)
-        plt.title(project["project_name"].split(".")[0], fontsize=22, fontweight="bold")
-        data_sizes = [
-            project["doc_categories"]["NEW"],
-            project["doc_categories"]["ANNOTATION_IN_PROGRESS"],
-            project["doc_categories"]["ANNOTATION_FINISHED"],
-            project["doc_categories"]["CURATION_IN_PROGRESS"],
-            project["doc_categories"]["CURATION_FINISHED"],
-        ]
+        df_pie = pd.DataFrame(
+            {"Labels": pie_labels, "Sizes": list(project["doc_categories"].values())}
+        ).sort_values(by="Labels")
 
-        pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
-
-        wedges, _ = plt.pie(
-            data_sizes,
-            colors=pie_colors,
-            startangle=90,
-            radius=2,
-            counterclock=False
-            )
-
-        plt.axis("equal")
-
-        legend_labels = [
-            f"{label} ({percent:.2f}% / {size} files)"
-            for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
-        ]
-        plt.legend(
-            wedges,
-            legend_labels,
-            title="Categories",
-            fontsize=12,
-            loc="center left",
-            bbox_to_anchor=(1, 0.5),
+        fig.add_trace(
+            go.Pie(
+                title=dict(
+                    text=project["project_name"].split(".")[0],
+                ),
+                labels=df_pie["Labels"],
+                values=df_pie["Sizes"],
+                sort=False,
+                name=project["project_name"].split(".")[0],
+                hole=0.4,
+                hoverinfo="label+value",
+            ),
+            1,
+            idx + 1,
         )
 
-    plt.tight_layout()
-    st.pyplot()
-
-
-def plot_project_progress(project_data, multiple=False) -> None:
-    """
-    Generate a visual representation of project progress based on an export of project details provided by the site manager.
-
-    This function takes a dict containing project progress data and generates a pie chart showing the percentage of files finished vs. remaining.
-
-
-    Parameters:
-        project_data (dict): A dictionary containing project progress data.
-
-    """
-    st.title(f"Project: {project_data['project_name'].split('.')[0]}")
-
-    data_sizes = [
-        project_data["doc_categories"]["NEW"],
-        project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
-        project_data["doc_categories"]["ANNOTATION_FINISHED"],
-        project_data["doc_categories"]["CURATION_IN_PROGRESS"],
-        project_data["doc_categories"]["CURATION_FINISHED"],
-    ]
-
-    pie_labels = [
-        "New",
-        "Annotation In Progress",
-        "Annotation Finished",
-        "Curation In Progress",
-        "Curation Finished",
-    ]
-    pie_colors = [
-        "#fc1c03",
-        "#fcbe03",
-        "#03fc17",
-        "#0373fc",
-        "#4e03fc",
-    ]
-    pie_percentages = 100.0 * np.array(data_sizes) / np.array(data_sizes).sum()
-    plt.figure(figsize=(15, 9))
-    plt.suptitle(f"Documents' Status\n{project_data['project_tags'][-1].upper()}", fontsize=16, fontweight="bold")
-    wedges, texts = plt.pie(
-        data_sizes,
-        colors=pie_colors,
-        startangle=140)
-
-    plt.axis("equal")
-
-    # Create a legend with labels and percentages
-    legend_labels = [
-        f"{label} ({percent:.2f}% / {size} files)"
-        for label, size, percent in zip(pie_labels, data_sizes, pie_percentages)
-    ]
-    plt.legend(
-        wedges,
-        legend_labels,
-        title="Categories",
-        fontsize=12,
-        loc="center left",
-        bbox_to_anchor=(1, 0.5),
+    fig.update_layout(
+        title=dict(
+            text=f"Projects with tag: {tag}",
+            font=dict(size=24),
+            y=0.95,
+            x=0.5,
+            xanchor="center",
+        ),
+        font=dict(size=18),
+        legend=dict(font=dict(size=16), y=0.5),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=100, r=100),
+        autosize=True,
     )
-    plt.tight_layout()
-    st.pyplot()
+
+    st.plotly_chart(fig, use_container_width=True)
+
 
 def read_dir(dir) -> list[dict]:
     """
@@ -174,6 +178,7 @@ def read_dir(dir) -> list[dict]:
         projects.append(json.load(open(os.path.join(dir, file), "r")))
     return projects
 
+
 def get_unique_tags(projects):
     """
     Get a list of unique tags from a list of projects.
@@ -186,7 +191,7 @@ def get_unique_tags(projects):
     """
     unique_tags = set()
     for project in projects:
-        unique_tags.update(project.get('project_tags', []))
+        unique_tags.update(project.get("project_tags", []))
     return list(unique_tags)
 
 
@@ -195,35 +200,45 @@ def select_data_folder():
     Generate a sidebar widget to select the data folder containing the INCEpTION projects.
     """
 
-    st.sidebar.write("Please input the path to the folder containing the INCEpTION projects.")
-    projects_folder = st.sidebar.text_input("Projects Folder:", value="")
-    if st.sidebar.button("Generate Reports"):
-        st.session_state['initialized'] = True
-        st.session_state['projects_folder'] = projects_folder
+    st.sidebar.write(
+        "Please input the path to the folder containing the INCEpTION projects."
+    )
+    projects_folder = st.sidebar.text_input(
+        "Projects Folder:",
+        value="/home/basch/Documents/projects/exported_data_2024_05_13/",
+    )
+    button = st.sidebar.button("Generate Reports")
+    if button:
+        st.session_state["initialized"] = True
+        st.session_state["projects"] = read_dir(projects_folder)
+        button = False
+        set_sidebar_state("collapsed")
+
 
 def main():
-    change_width(80)
-    st.title("INCEpTION Projects Progress")
+    startup()
+    st.write(
+        "<style> h1 {text-align: center; margin-bottom: 50px, } </style>",
+        unsafe_allow_html=True,
+    )
+    st.title("INCEpTION Reporting Dashboard")
+    st.write("<hr>", unsafe_allow_html=True)
 
     select_data_folder()
 
     projects = []
-    if 'projects_folder' in st.session_state:
-        projects = read_dir(st.session_state.projects_folder)
-        projects.sort(key=lambda x: x["project_name"])
+    if st.session_state.get("initialized"):
+        projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
+        projects = sorted(projects, key=lambda x: x["project_name"])
 
     if projects:
         unique_tags = get_unique_tags(projects)
-        
-        selected_tags = []
-        columns = st.columns(len(unique_tags))
-
-        for col, tag in zip(columns, unique_tags):
-            if col.checkbox(tag.capitalize(), key=tag):
-                selected_tags.append(tag)
+        selected_tags = st.multiselect("Select a project tag:", unique_tags)
 
         for tag in selected_tags:
-            multi_projects = [project for project in projects if tag in project["project_tags"]]
+            multi_projects = [
+                project for project in projects if tag in project["project_tags"]
+            ]
             plot_multiples(multi_projects, tag)
 
 
