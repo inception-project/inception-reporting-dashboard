@@ -250,6 +250,7 @@ def select_method_to_import_data():
             button = False
             set_sidebar_state("collapsed")
     elif method == "API":
+        projects_folder = f"{os.path.expanduser('~')}/.inception_reports/projects"
         api_url = st.sidebar.text_input("Enter API URL:", "")
         username = st.sidebar.text_input("Username:", "")
         password = st.sidebar.text_input("Password:", type="password", value="")
@@ -265,7 +266,7 @@ def select_method_to_import_data():
                     inception_project, "jsoncas"
                 )
                 with open(
-                    f"{os.path.expanduser('~')}/.inception_reports/projects/{inception_project}.zip",
+                    f"{projects_folder}/{inception_project}.zip",
                     "wb",
                 ) as f:
                     f.write(project_export)
@@ -371,14 +372,15 @@ def plot_project_progress(project) -> None:
 
     """
 
+    project_name = project["name"].strip(".zip").strip("<").strip(">")
+    project_tags = project["tags"]
+
     st.write(
-        f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project['name']} <br> <b>Tags</b>: {', '.join(project['tags'])}</div>",
+        f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: {', '.join(project_tags)}</div>",
         unsafe_allow_html=True,
     )
 
     # df = project["logs"]
-    project_name = project["name"].strip(".zip")
-    project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
 
