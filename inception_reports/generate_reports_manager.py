@@ -47,19 +47,6 @@ def startup():
 
     st.markdown(
         """
-        <style>
-        body {
-            cursor: url('https://cdn-icons-png.flaticon.com/64/5198/5198523.png'), auto !important;
-        }
-
-        rect.legendtoggle {
-            cursor: url('https://cdn-icons-png.flaticon.com/32/12179/12179477.png'), pointer !important;
-        }
-
-        rect.nsewdrag.drag {
-            cursor: url('https://cdn-icons-png.flaticon.com/32/10263/10263093.png'), pointer !important;
-        }
-        </style>
 
         <style>
         .block-container {
@@ -240,7 +227,7 @@ def select_method_to_import_data():
             "Please input the path to the folder containing the INCEpTION projects."
         )
         projects_folder = st.sidebar.text_input(
-            "Projects Folder:", value="data/dresden_projects/"
+            "Projects Folder:", value="data/gemtex_demo_projects/"
         )
         button = st.sidebar.button("Generate Reports")
         if button:
