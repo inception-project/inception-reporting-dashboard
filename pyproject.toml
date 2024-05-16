@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "inception_reports"
 description = "Generate plots that report the progress of an INCEpTION project."
-version = "0.3.1"
+version = "0.3.2"
 authors = [
     { name = "Serwar", email = "serwar.basch@tu-darmstadt.de" }
 ]
 readme = "README.md"
 requires-python = ">=3.11"
+
 dependencies = [
     "streamlit",
     "pandas",
@@ -25,6 +26,13 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inception_reports"]
+
+[tool.setuptools.package-data]
+"inception_reports" = ["data/*.json"]
 
 [project.scripts]
 inception_reports = "inception_reports.__main__:main"
