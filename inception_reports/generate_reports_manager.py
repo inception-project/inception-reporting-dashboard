@@ -128,7 +128,7 @@ def read_dir(dir_path: str) -> list[dict]:
     """
     Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
 
-    Args:
+    Parameters:
         dir_path (str): The path to the directory containing the zip files.
 
     Returns:
@@ -177,7 +177,7 @@ def read_dir(dir_path: str) -> list[dict]:
                 projects.append(
                     {
                         "name": file_name,
-                        "tags": project_tags,
+                        "tags": project_tags if project_tags else None,
                         "documents": project_documents,
                         "annotations": annotations,
                     }
@@ -358,16 +358,21 @@ def plot_project_progress(project) -> None:
 
     """
 
-    st.write(
-        f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project['name']} <br> <b>Tags</b>: {', '.join(project['tags'])}</div>",
-        unsafe_allow_html=True,
-    )
-
     # df = project["logs"]
     project_name = project["name"].strip(".zip")
     project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
+    
+    if project_tags:
+        st.write(
+            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: {', '.join(project['tags'])}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.write(
+            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: No tags available</div>", unsafe_allow_html=True,
+        )
 
     doc_categories = {
         "ANNOTATION_IN_PROGRESS": 0,
