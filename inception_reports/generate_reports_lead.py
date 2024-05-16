@@ -41,19 +41,6 @@ def startup():
 
     st.markdown(
         """
-        <style>
-        body {
-            cursor: url('https://cdn-icons-png.flaticon.com/64/5198/5198523.png'), auto !important;
-        }
-
-        rect.legendtoggle {
-            cursor: url('https://cdn-icons-png.flaticon.com/32/12179/12179477.png'), pointer !important;
-        }
-
-        rect.nsewdrag.drag {
-            cursor: url('https://cdn-icons-png.flaticon.com/32/10263/10263093.png'), pointer !important;
-        }
-        </style>
 
         <style>
         .block-container {
@@ -205,7 +192,7 @@ def select_data_folder():
     )
     projects_folder = st.sidebar.text_input(
         "Projects Folder:",
-        value="/home/basch/Documents/projects/exported_data_2024_05_13/",
+        value="",
     )
     button = st.sidebar.button("Generate Reports")
     if button:
@@ -227,7 +214,7 @@ def main():
     select_data_folder()
 
     projects = []
-    if st.session_state.get("initialized"):
+    if st.session_state.get("initialized") and st.session_state.get("projects"):
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
         projects = sorted(projects, key=lambda x: x["project_name"])
 
