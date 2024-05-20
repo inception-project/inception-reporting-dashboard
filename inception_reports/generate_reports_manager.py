@@ -227,7 +227,7 @@ def select_method_to_import_data():
             "Please input the path to the folder containing the INCEpTION projects."
         )
         projects_folder = st.sidebar.text_input(
-            "Projects Folder:", value="data/gemtex_demo_projects/"
+            "Projects Folder:", value=""
         )
         button = st.sidebar.button("Generate Reports")
         if button:
