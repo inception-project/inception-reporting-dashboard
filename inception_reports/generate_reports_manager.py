@@ -110,7 +110,7 @@ def translate_tag(tag, translation_path=None):
         else:
             return tag
     else:
-        data_path = importlib.resources.files('inception_reports.data')
+        data_path = importlib.resources.files("inception_reports.data")
         with open(data_path.joinpath("specialties.json"), "r") as f:
             specialties = json.load(f)
         with open(data_path.joinpath("document_types.json"), "r") as f:
@@ -226,9 +226,7 @@ def select_method_to_import_data():
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
         )
-        projects_folder = st.sidebar.text_input(
-            "Projects Folder:", value=""
-        )
+        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
         button = st.sidebar.button("Generate Reports")
         if button:
             st.session_state["method"] = "Manually"
@@ -240,25 +238,43 @@ def select_method_to_import_data():
         api_url = st.sidebar.text_input("Enter API URL:", "")
         username = st.sidebar.text_input("Username:", "")
         password = st.sidebar.text_input("Password:", type="password", value="")
-        inception_status, inception_client = login_to_inception(
-            api_url, username, password
-        )
-        if inception_status:
+        inception_status = st.session_state.get("inception_status", False)
+        inception_client = st.session_state.get("inception_client", None)
+        if not inception_status:
+            inception_status, inception_client = login_to_inception(api_url, username, password)
+            st.session_state["inception_status"] = inception_status
+            st.session_state["inception_client"] = inception_client
+
+        if inception_status and "available_projects" not in st.session_state:
             inception_projects = inception_client.api.projects()
-            st.sidebar.write("Following projects got imported:")
-            for inception_project in inception_projects:
-                st.sidebar.write(inception_project.project_name)
-                project_export = inception_client.api.export_project(
-                    inception_project, "jsoncas"
-                )
-                with open(
-                    f"{projects_folder}/{inception_project}.zip",
-                    "wb",
-                ) as f:
-                    f.write(project_export)
-            st.session_state["method"] = "API"
-            st.session_state["projects"] = read_dir(projects_folder)
-            set_sidebar_state("collapsed")
+            st.session_state["available_projects"] = inception_projects
+
+        if inception_status and "available_projects" in st.session_state:
+            st.sidebar.write("Select the projects to import:")
+            selected_projects = st.session_state.get("selected_projects", {})
+            
+            for inception_project in st.session_state["available_projects"]:
+                project_name = inception_project.project_name
+                project_id = inception_project.project_id
+                selected_projects[project_id] = st.sidebar.checkbox(project_name, value=False)
+                st.session_state["selected_projects"] = selected_projects
+            
+            button = st.sidebar.button("Generate Reports")
+            
+            if button:
+                for project_id, is_selected in selected_projects.items():
+                    if is_selected:
+                        project = inception_client.api.project(project_id)
+                        st.sidebar.write(f"Importing project: {project.project_name}")
+                        project_export = inception_client.api.export_project(project, "jsoncas")
+                        file_path = f"{projects_folder}/{project.project_name}.zip"
+                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                        with open(file_path, "wb") as f:
+                            f.write(project_export)
+                
+                st.session_state["method"] = "API"
+                st.session_state["projects"] = read_dir(projects_folder)
+                set_sidebar_state("collapsed")
 
 
 def find_element_by_name(element_list, name):
@@ -362,7 +378,7 @@ def plot_project_progress(project) -> None:
     project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
-    
+
     if project_tags:
         st.write(
             f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: {', '.join(project['tags'])}</div>",
@@ -370,7 +386,8 @@ def plot_project_progress(project) -> None:
         )
     else:
         st.write(
-            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: No tags available</div>", unsafe_allow_html=True,
+            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: No tags available</div>",
+            unsafe_allow_html=True,
         )
 
     doc_categories = {
@@ -423,11 +440,11 @@ def plot_project_progress(project) -> None:
 
     pie_chart = go.Figure(
         go.Pie(
-            labels=df_pie['Labels'],
-            values=df_pie['Sizes'],
+            labels=df_pie["Labels"],
+            values=df_pie["Sizes"],
             sort=False,
             hole=0.4,
-            hoverinfo="label+value"
+            hoverinfo="label+value",
         )
     )
 
@@ -443,7 +460,7 @@ def plot_project_progress(project) -> None:
         legend=dict(font=dict(size=12), y=0.5),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=40, r=40)
+        margin=dict(l=40, r=40),
     )
 
     bar_chart = go.Figure()
@@ -457,7 +474,7 @@ def plot_project_progress(project) -> None:
                 name=row["Types"],
                 legendgroup=row["Types"],
                 showlegend=True,
-                hoverinfo="x+y"
+                hoverinfo="x+y",
             )
         )
 
@@ -471,7 +488,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=50 * len(df_bar),
+        height= 60 * len(df_bar),
         font=dict(size=18),
         legend=dict(font=dict(size=12)),
         paper_bgcolor="rgba(0,0,0,0)",
