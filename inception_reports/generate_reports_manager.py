@@ -124,7 +124,7 @@ def translate_tag(tag, translation_path=None):
             return tag
 
 
-def read_dir(dir_path: str) -> list[dict]:
+def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
     """
     Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
 
@@ -141,6 +141,8 @@ def read_dir(dir_path: str) -> list[dict]:
     projects = []
 
     for file_name in os.listdir(dir_path):
+        if selected_projects and file_name.split(".")[0] not in selected_projects:
+            continue
         file_path = os.path.join(dir_path, file_name)
         if zipfile.is_zipfile(file_path):
             with zipfile.ZipFile(file_path, "r") as zip_file:
@@ -219,7 +221,7 @@ def select_method_to_import_data():
     """
 
     method = st.sidebar.radio(
-        "Choose your method to import data:", ("Manually", "API"), index=0
+        "Choose your method to import data:", ("Manually", "API"), index=1
     )
 
     if method == "Manually":
@@ -235,6 +237,7 @@ def select_method_to_import_data():
             set_sidebar_state("collapsed")
     elif method == "API":
         projects_folder = f"{os.path.expanduser('~')}/.inception_reports/projects"
+        os.makedirs(os.path.dirname(projects_folder), exist_ok=True)
         api_url = st.sidebar.text_input("Enter API URL:", "")
         username = st.sidebar.text_input("Username:", "")
         password = st.sidebar.text_input("Password:", type="password", value="")
@@ -259,21 +262,21 @@ def select_method_to_import_data():
                 selected_projects[project_id] = st.sidebar.checkbox(project_name, value=False)
                 st.session_state["selected_projects"] = selected_projects
             
+            selected_projects_names = []
             button = st.sidebar.button("Generate Reports")
-            
             if button:
                 for project_id, is_selected in selected_projects.items():
                     if is_selected:
                         project = inception_client.api.project(project_id)
+                        selected_projects_names.append(project.project_name)
+                        file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
                         project_export = inception_client.api.export_project(project, "jsoncas")
-                        file_path = f"{projects_folder}/{project.project_name}.zip"
-                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
                         with open(file_path, "wb") as f:
                             f.write(project_export)
                 
                 st.session_state["method"] = "API"
-                st.session_state["projects"] = read_dir(projects_folder)
+                st.session_state["projects"] = read_dir(projects_folder, selected_projects_names)
                 set_sidebar_state("collapsed")
 
 
@@ -305,7 +308,6 @@ def get_type_counts(annotations):
         dict: A dictionary containing the count of each type.
     """
     count_dict = {}
-
     layerDefinition = annotations.popitem()[1].select(
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
     )
