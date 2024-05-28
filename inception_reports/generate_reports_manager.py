@@ -308,7 +308,7 @@ def get_type_counts(annotations):
         dict: A dictionary containing the count of each type.
     """
     count_dict = {}
-    layerDefinition = annotations.popitem()[1].select(
+    layerDefinition = next(iter(annotations.values())).select(
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
     )
     for doc in annotations:
