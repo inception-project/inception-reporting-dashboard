@@ -247,7 +247,9 @@ def select_method_to_import_data():
         inception_status = st.session_state.get("inception_status", False)
         inception_client = st.session_state.get("inception_client", None)
         if not inception_status:
-            inception_status, inception_client = login_to_inception(api_url, username, password)
+            inception_status, inception_client = login_to_inception(
+                api_url, username, password
+            )
             st.session_state["inception_status"] = inception_status
             st.session_state["inception_client"] = inception_client
 
@@ -258,13 +260,15 @@ def select_method_to_import_data():
         if inception_status and "available_projects" in st.session_state:
             st.sidebar.write("Select the projects to import:")
             selected_projects = st.session_state.get("selected_projects", {})
-            
+
             for inception_project in st.session_state["available_projects"]:
                 project_name = inception_project.project_name
                 project_id = inception_project.project_id
-                selected_projects[project_id] = st.sidebar.checkbox(project_name, value=False)
+                selected_projects[project_id] = st.sidebar.checkbox(
+                    project_name, value=False
+                )
                 st.session_state["selected_projects"] = selected_projects
-            
+
             selected_projects_names = []
             button = st.sidebar.button("Generate Reports")
             if button:
@@ -274,12 +278,16 @@ def select_method_to_import_data():
                         selected_projects_names.append(project.project_name)
                         file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
-                        project_export = inception_client.api.export_project(project, "jsoncas")
+                        project_export = inception_client.api.export_project(
+                            project, "jsoncas"
+                        )
                         with open(file_path, "wb") as f:
                             f.write(project_export)
-                
+
                 st.session_state["method"] = "API"
-                st.session_state["projects"] = read_dir(projects_folder, selected_projects_names)
+                st.session_state["projects"] = read_dir(
+                    projects_folder, selected_projects_names
+                )
                 set_sidebar_state("collapsed")
 
 
@@ -396,6 +404,7 @@ def plot_project_progress(project) -> None:
     project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
+    type_counts = get_type_counts(project_annotations)
 
     if project_tags:
         st.write(
@@ -421,20 +430,42 @@ def plot_project_progress(project) -> None:
         if state in doc_categories:
             doc_categories[state] += 1
 
+    doc_token_categories = {
+        "ANNOTATION_IN_PROGRESS": 0,
+        "ANNOTATION_FINISHED": 0,
+        "CURATION_IN_PROGRESS": 0,
+        "CURATION_FINISHED": 0,
+        "NEW": 0,
+    }
+
+    for doc in project_documents:
+        state = doc["state"]
+        if state in doc_token_categories:
+            doc_token_categories[state] += type_counts["Token"]["documents"][
+                doc["name"]
+            ]
+
     project_data = {
         "project_name": project_name,
         "project_tags": project_tags,
         "doc_categories": doc_categories,
+        "doc_token_categories": doc_token_categories,
     }
 
-    type_counts = get_type_counts(project_annotations)
-
-    data_sizes = [
+    data_sizes_docs = [
         project_data["doc_categories"]["NEW"],
         project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
         project_data["doc_categories"]["ANNOTATION_FINISHED"],
         project_data["doc_categories"]["CURATION_IN_PROGRESS"],
         project_data["doc_categories"]["CURATION_FINISHED"],
+    ]
+
+    data_sizes_tokens = [
+        project_data["doc_token_categories"]["NEW"],
+        project_data["doc_token_categories"]["ANNOTATION_IN_PROGRESS"],
+        project_data["doc_token_categories"]["ANNOTATION_FINISHED"],
+        project_data["doc_token_categories"]["CURATION_IN_PROGRESS"],
+        project_data["doc_token_categories"]["CURATION_FINISHED"],
     ]
 
     pie_labels = [
@@ -445,24 +476,39 @@ def plot_project_progress(project) -> None:
         "Curation Finished",
     ]
 
-    df_pie = pd.DataFrame({"Labels": pie_labels, "Sizes": data_sizes}).sort_values(
-        by="Labels", ascending=True
-    )
+    df_pie_docs = pd.DataFrame(
+        {"Labels": pie_labels, "Sizes": data_sizes_docs}
+    ).sort_values(by="Labels", ascending=True)
+    df_pie_tokens = pd.DataFrame(
+        {"Labels": pie_labels, "Sizes": data_sizes_tokens}
+    ).sort_values(by="Labels", ascending=True)
 
     df_bar = pd.DataFrame(
         {
-            "Types": [type for type, _ in type_counts.items()],
-            "Counts": list(type_counts.values()),
+            "Types": type_counts.keys(),
+            "Counts": [type_counts[type_name]["total"] for type_name in type_counts],
         }
     )
 
-    pie_chart = go.Figure(
+    pie_chart = go.Figure()
+
+    pie_chart.add_trace(
         go.Pie(
-            labels=df_pie["Labels"],
-            values=df_pie["Sizes"],
+            labels=df_pie_docs["Labels"],
+            values=df_pie_docs["Sizes"],
             sort=False,
             hole=0.4,
             hoverinfo="label+value",
+        )
+    )
+    pie_chart.add_trace(
+        go.Pie(
+            labels=df_pie_tokens["Labels"],
+            values=df_pie_tokens["Sizes"],
+            sort=False,
+            hole=0.4,
+            hoverinfo="label+value",
+            visible=False,
         )
     )
 
@@ -479,6 +525,30 @@ def plot_project_progress(project) -> None:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=40, r=40),
+        updatemenus=[
+            {
+                "buttons": [
+                    {
+                        "label": "Documents",
+                        "method": "update",
+                        "args": [
+                            {"visible": [True, False]},
+                            {"title": "Documents Status"},
+                        ],
+                    },
+                    {
+                        "label": "Tokens",
+                        "method": "update",
+                        "args": [
+                            {"visible": [False, True]},
+                            {"title": "Tokens Status"},
+                        ],
+                    },
+                ],
+                "direction": "down",
+                "showactive": True,
+            }
+        ],
     )
 
     bar_chart = go.Figure()
@@ -506,7 +576,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height= 60 * len(df_bar),
+        height=60 * len(df_bar),
         font=dict(size=18),
         legend=dict(font=dict(size=12)),
         paper_bgcolor="rgba(0,0,0,0)",
