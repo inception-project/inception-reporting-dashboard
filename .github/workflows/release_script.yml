@@ -1,7 +1,7 @@
 name: Publish Python 🐍 distribution 📦 to PyPI
 
 on:
-  workflow_dispatch
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,11 +15,7 @@ jobs:
       with:
         python-version: "3.x"
     - name: Install pypa/build
-      run: >-
-        python3 -m
-        pip install
-        build
-        --user
+      run: python3 -m pip install build --user
     - name: Build a binary wheel and a source tarball
       run: python3 -m build
     - name: Store the distribution packages
@@ -29,11 +25,23 @@ jobs:
         path: dist/
 
   publish-to-pypi:
-    name: >-
-      Publish Python 🐍 distribution 📦 to PyPI
-    needs:
-    - build
+    name: Publish Python 🐍 distribution 📦 to PyPI
+    needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/inception-reports
+    steps:
+    - name: Download the built distribution packages
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+    - name: Install Twine
+      run: python3 -m pip install twine --user
+    - name: Publish package to PyPI
+      env:
+        TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
+        TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+      run: python3 -m twine upload dist/*
