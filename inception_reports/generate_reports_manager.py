@@ -308,30 +308,43 @@ def get_type_counts(annotations):
         annotations (dict): A dictionary containing the annotations.
 
     Returns:
-        dict: A dictionary containing the count of each type.
+        dict: A dictionary containing the count of each type, both total and per document.
+              The structure is {type_name: {'total': count, 'documents': {doc_id: count}}}.
     """
-    count_dict = {}
-    layerDefinition = next(iter(annotations.values())).select(
+    type_count_dict = {}
+
+    # Assuming that all documents have the same layer definition
+    first_doc = next(iter(annotations.values()))
+    layer_definitions = first_doc.select(
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
     )
-    for doc in annotations:
+
+    for doc_id, cas in annotations.items():
+        # Get the list of types for the current CAS object
         type_names = [
-            (
-                find_element_by_name(layerDefinition, t.name),
-                len(annotations[doc].select(t.name)),
-            )
-            for t in annotations[doc].typesystem.get_types()
+            (find_element_by_name(layer_definitions, t.name), len(cas.select(t.name)))
+            for t in cas.typesystem.get_types()
             if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
         ]
 
         for type_name, count in type_names:
-            if type_name not in count_dict:
-                count_dict[type_name] = 0
-            count_dict[type_name] += count
-    count_dict = {k: v for k, v in count_dict.items() if v > 0}
-    count_dict = dict(sorted(count_dict.items(), key=lambda item: item[1]))
+            if type_name is None:
+                continue
 
-    return count_dict
+            if type_name not in type_count_dict:
+                type_count_dict[type_name] = {"total": 0, "documents": {}}
+            type_count_dict[type_name]["total"] += count
+
+            if doc_id not in type_count_dict[type_name]["documents"]:
+                type_count_dict[type_name]["documents"][doc_id] = 0
+            type_count_dict[type_name]["documents"][doc_id] += count
+
+    type_count_dict = {k: v for k, v in type_count_dict.items() if v["total"] > 0}
+    type_count_dict = dict(
+        sorted(type_count_dict.items(), key=lambda item: item[1]["total"])
+    )
+
+    return type_count_dict
 
 
 def export_data(project_data, output_directory=None):
