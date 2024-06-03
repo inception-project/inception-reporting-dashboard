@@ -209,11 +209,14 @@ def login_to_inception(api_url, username, password):
     button = st.sidebar.button("Login")
     if button:
         inception_client = Pycaprio(api_url, (username, password))
-        st.sidebar.success("Login successful ✅")
-        button = False
-        return True, inception_client
+        try:
+            inception_client.api.projects()  # Check if login is successful
+            st.sidebar.success("Login successful ✅")
+            return True, inception_client
+        except Exception:
+            st.sidebar.error("Login unsuccessful ❌")
+            return False, None
     return False, None
-
 
 def select_method_to_import_data():
     """
