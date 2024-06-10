@@ -26,9 +26,9 @@ def main():
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--manager", help="You are managing a single project, or a single location.", action="store_true"
+        "-m", "--manager", help="You are managing a single project, or a single location.", action="store_true"
     )
-    group.add_argument("--lead", help="You are leading multiple projects, or multiple locations.", action="store_true")
+    group.add_argument("-l", "--lead", help="You are leading multiple projects, or multiple locations.", action="store_true")
 
     args = parser.parse_args()
 
