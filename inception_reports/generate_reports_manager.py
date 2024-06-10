@@ -162,19 +162,6 @@ def translate_tag(tag, translation_path=None):
 
 
 def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
-    """
-    Reads a directory containing zip files, extracts the contents, and retrieves project metadata and annotations.
-
-    Parameters:
-        dir_path (str): The path to the directory containing the zip files.
-
-    Returns:
-        list[dict]: A list of dictionaries, where each dictionary represents a project and contains the following keys:
-            - "name": The name of the zip file.
-            - "tags": A list of tags extracted from the project metadata.
-            - "documents": A list of source documents from the project metadata.
-            - "annotations": A dictionary mapping annotation subfolder names to their corresponding CAS objects.
-    """
     projects = []
 
     for file_name in os.listdir(dir_path):
@@ -191,15 +178,18 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                 if os.path.exists(project_meta_path):
                     with open(project_meta_path, "r") as project_meta_file:
                         project_meta = json.load(project_meta_file)
+                        description = project_meta.get("description", "")
                         project_tags = [
                             translate_tag(word.strip("#"))
-                            for word in project_meta["description"].split()
+                            for word in description.split()
                             if word.startswith("#")
-                        ]
-                        project_documents = project_meta["source_documents"]
+                        ] if description else []
+
+                        project_documents = project_meta.get("source_documents")
+                        if not project_documents:
+                            raise ValueError("No source documents found in the project.")
 
                 annotations = {}
-                # Find annotation folders
                 annotation_folders = [
                     name
                     for name in zip_file.namelist()
@@ -261,14 +251,14 @@ def select_method_to_import_data():
     """
 
     method = st.sidebar.radio(
-        "Choose your method to import data:", ("Manually", "API"), index=1
+        "Choose your method to import data:", ("Manually", "API"), index=0
     )
 
     if method == "Manually":
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
         )
-        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
+        projects_folder = st.sidebar.text_input("Projects Folder:", value="data/gemtex_demo_projects")
         button = st.sidebar.button("Generate Reports")
         if button:
             st.session_state["method"] = "Manually"
