@@ -20,8 +20,11 @@ import os
 import time
 
 import pandas as pd
+import pkg_resources
 import plotly.graph_objects as go
+import requests
 import streamlit as st
+import toml
 from plotly.subplots import make_subplots
 
 st.set_page_config(
@@ -75,6 +78,40 @@ def startup():
         unsafe_allow_html=True,
     )
 
+    project_info = get_project_info()
+    if project_info:
+        current_version, package_name = project_info
+        latest_version = check_package_version(current_version, package_name)
+        if latest_version:
+            st.sidebar.warning(
+                f"A new version ({latest_version}) of {package_name} is available. "
+                f"You are currently using version ({current_version}). Please update the package."
+            )
+
+def get_project_info():
+    try:
+        pyproject_path = os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml')
+        with open(pyproject_path, 'r') as f:
+            pyproject_data = toml.load(f)
+        version = pyproject_data["project"].get("version")
+        name = pyproject_data["project"].get("name")
+        if version and name:
+            return version, name
+        return None
+    except (FileNotFoundError, KeyError):
+        return None
+
+
+def check_package_version(current_version, package_name):
+    try:
+        response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
+        if response.status_code == 200:
+            latest_version = response.json()["info"]["version"]
+            if pkg_resources.parse_version(current_version) < pkg_resources.parse_version(latest_version):
+                return latest_version
+    except requests.RequestException:
+        return None
+    return None
 
 def set_sidebar_state(value):
     if st.session_state.sidebar_state == value:
@@ -182,22 +219,31 @@ def get_unique_tags(projects):
     return list(unique_tags)
 
 
-def select_data_folder():
+def select_data_folder_or_files():
     """
-    Generate a sidebar widget to select the data folder containing the INCEpTION projects.
+    Generate a sidebar widget to select the data folder or individual JSON files containing the INCEpTION projects.
     """
 
     st.sidebar.write(
-        "Please input the path to the folder containing the INCEpTION projects."
+        "Please input the path to the folder containing the INCEpTION projects:"
     )
     projects_folder = st.sidebar.text_input(
         "Projects Folder:",
         value="",
     )
+    uploaded_files = st.sidebar.file_uploader(
+        "Or Select project files manually:",
+        type=["json"],
+        accept_multiple_files=True,
+    )
     button = st.sidebar.button("Generate Reports")
     if button:
         st.session_state["initialized"] = True
-        st.session_state["projects"] = read_dir(projects_folder)
+        if uploaded_files:
+            st.write("Uploaded files: ", uploaded_files)
+            st.session_state["projects"] = [json.load(file) for file in uploaded_files]
+        elif projects_folder:
+            st.session_state["projects"] = read_dir(projects_folder)
         button = False
         set_sidebar_state("collapsed")
 
@@ -211,7 +257,7 @@ def main():
     st.title("INCEpTION Reporting Dashboard")
     st.write("<hr>", unsafe_allow_html=True)
 
-    select_data_folder()
+    select_data_folder_or_files()
 
     projects = []
     if st.session_state.get("initialized") and st.session_state.get("projects"):
