@@ -88,10 +88,11 @@ def startup():
                 f"You are currently using version ({current_version}). Please update the package."
             )
 
+
 def get_project_info():
     try:
-        pyproject_path = os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml')
-        with open(pyproject_path, 'r') as f:
+        pyproject_path = os.path.join(os.path.dirname(__file__), "..", "pyproject.toml")
+        with open(pyproject_path, "r") as f:
             pyproject_data = toml.load(f)
         version = pyproject_data["project"].get("version")
         name = pyproject_data["project"].get("name")
@@ -107,11 +108,14 @@ def check_package_version(current_version, package_name):
         response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
         if response.status_code == 200:
             latest_version = response.json()["info"]["version"]
-            if pkg_resources.parse_version(current_version) < pkg_resources.parse_version(latest_version):
+            if pkg_resources.parse_version(
+                current_version
+            ) < pkg_resources.parse_version(latest_version):
                 return latest_version
     except requests.RequestException:
         return None
     return None
+
 
 def set_sidebar_state(value):
     if st.session_state.sidebar_state == value:
@@ -136,28 +140,53 @@ def change_width(page_width=80) -> None:
 def plot_multiples(projects, tag) -> None:
 
     pie_labels = [
+        "New",
         "Annotation In Progress",
         "Annotation Finished",
         "Curation In Progress",
         "Curation Finished",
-        "New",
     ]
 
     fig = make_subplots(
         rows=1, cols=len(projects), specs=[[{"type": "domain"}] * len(projects)]
     )
     for idx, project in enumerate(projects):
-        df_pie = pd.DataFrame(
+        # df_pie = pd.DataFrame(
+        #     {"Labels": pie_labels, "Sizes": list(project["doc_categories"].values())}
+        # ).sort_values(by="Labels")
+        df_pie_docs = pd.DataFrame(
             {"Labels": pie_labels, "Sizes": list(project["doc_categories"].values())}
-        ).sort_values(by="Labels")
+        ).sort_values(by="Labels", ascending=True)
+        df_pie_tokens = pd.DataFrame(
+            {
+                "Labels": pie_labels,
+                "Sizes": list(project["doc_token_categories"].values()),
+            }
+        ).sort_values(by="Labels", ascending=True)
 
         fig.add_trace(
             go.Pie(
                 title=dict(
                     text=project["project_name"].split(".")[0],
                 ),
-                labels=df_pie["Labels"],
-                values=df_pie["Sizes"],
+                labels=df_pie_docs["Labels"],
+                values=df_pie_docs["Sizes"],
+                sort=False,
+                name=project["project_name"].split(".")[0],
+                hole=0.4,
+                hoverinfo="label+value",
+            ),
+            1,
+            idx + 1,
+        )
+
+        fig.add_trace(
+            go.Pie(
+                title=dict(
+                    text=project["project_name"].split(".")[0],
+                ),
+                labels=df_pie_tokens["Labels"],
+                values=df_pie_tokens["Sizes"],
                 sort=False,
                 name=project["project_name"].split(".")[0],
                 hole=0.4,
@@ -169,7 +198,7 @@ def plot_multiples(projects, tag) -> None:
 
     fig.update_layout(
         title=dict(
-            text=f"Projects with tag: {tag}",
+            text=f"Documents Status of projects with tag: {tag}",
             font=dict(size=24),
             y=0.95,
             x=0.5,
@@ -181,6 +210,30 @@ def plot_multiples(projects, tag) -> None:
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=100, r=100),
         autosize=True,
+        updatemenus=[
+            {
+                "buttons": [
+                    {
+                        "label": "Documents",
+                        "method": "update",
+                        "args": [
+                            {"visible": [True, False]},
+                            {"title": f"Documents Status of projects with tag: {tag}"},
+                        ],
+                    },
+                    {
+                        "label": "Tokens",
+                        "method": "update",
+                        "args": [
+                            {"visible": [False, True]},
+                            {"title": f"Tokens Status of projects with tag: {tag}"},
+                        ],
+                    },
+                ],
+                "direction": "down",
+                "showactive": True,
+            }
+        ],
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -215,7 +268,11 @@ def get_unique_tags(projects):
     """
     unique_tags = set()
     for project in projects:
-        unique_tags.update(project.get("project_tags", []))
+        project_tags = project.get("project_tags")
+        if project_tags:
+            unique_tags.update(project_tags)
+        else:
+            st.warning(f"No tags found for project: {project['project_name']}")
     return list(unique_tags)
 
 
@@ -227,10 +284,7 @@ def select_data_folder_or_files():
     st.sidebar.write(
         "Please input the path to the folder containing the INCEpTION projects:"
     )
-    projects_folder = st.sidebar.text_input(
-        "Projects Folder:",
-        value="",
-    )
+    projects_folder = st.sidebar.text_input("Projects Folder:", value="")
     uploaded_files = st.sidebar.file_uploader(
         "Or Select project files manually:",
         type=["json"],
@@ -267,10 +321,14 @@ def main():
     if projects:
         unique_tags = get_unique_tags(projects)
         selected_tags = st.multiselect("Select a project tag:", unique_tags)
-
         for tag in selected_tags:
             multi_projects = [
-                project for project in projects if tag in project["project_tags"]
+                project
+                for project in projects
+                if (
+                    project["project_tags"] is not None
+                    and tag in project["project_tags"]
+                )
             ]
             plot_multiples(multi_projects, tag)
 
