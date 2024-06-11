@@ -136,28 +136,50 @@ def change_width(page_width=80) -> None:
 def plot_multiples(projects, tag) -> None:
 
     pie_labels = [
+        "New",
         "Annotation In Progress",
         "Annotation Finished",
         "Curation In Progress",
         "Curation Finished",
-        "New",
     ]
 
     fig = make_subplots(
         rows=1, cols=len(projects), specs=[[{"type": "domain"}] * len(projects)]
     )
     for idx, project in enumerate(projects):
-        df_pie = pd.DataFrame(
-            {"Labels": pie_labels, "Sizes": list(project["doc_categories"].values())}
-        ).sort_values(by="Labels")
+        # df_pie = pd.DataFrame(
+        #     {"Labels": pie_labels, "Sizes": list(project["doc_categories"].values())}
+        # ).sort_values(by="Labels")
+        df_pie_docs = pd.DataFrame(
+        {"Labels": pie_labels, "Sizes": list(project["doc_categories"].values())}
+        ).sort_values(by="Labels", ascending=True)
+        df_pie_tokens = pd.DataFrame(
+            {"Labels": pie_labels, "Sizes": list(project["doc_token_categories"].values())}
+        ).sort_values(by="Labels", ascending=True)
 
         fig.add_trace(
             go.Pie(
                 title=dict(
                     text=project["project_name"].split(".")[0],
                 ),
-                labels=df_pie["Labels"],
-                values=df_pie["Sizes"],
+                labels=df_pie_docs["Labels"],
+                values=df_pie_docs["Sizes"],
+                sort=False,
+                name=project["project_name"].split(".")[0],
+                hole=0.4,
+                hoverinfo="label+value",
+            ),
+            1,
+            idx + 1,
+        )
+
+        fig.add_trace(
+            go.Pie(
+                title=dict(
+                    text=project["project_name"].split(".")[0],
+                ),
+                labels=df_pie_tokens["Labels"],
+                values=df_pie_tokens["Sizes"],
                 sort=False,
                 name=project["project_name"].split(".")[0],
                 hole=0.4,
@@ -169,7 +191,7 @@ def plot_multiples(projects, tag) -> None:
 
     fig.update_layout(
         title=dict(
-            text=f"Projects with tag: {tag}",
+            text=f"Documents Status of projects with tag: {tag}",
             font=dict(size=24),
             y=0.95,
             x=0.5,
@@ -181,6 +203,30 @@ def plot_multiples(projects, tag) -> None:
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=100, r=100),
         autosize=True,
+        updatemenus=[
+            {
+                "buttons": [
+                    {
+                        "label": "Documents",
+                        "method": "update",
+                        "args": [
+                            {"visible": [True, False]},
+                            {"title": f"Documents Status of projects with tag: {tag}"},
+                        ],
+                    },
+                    {
+                        "label": "Tokens",
+                        "method": "update",
+                        "args": [
+                            {"visible": [False, True]},
+                            {"title": f"Tokens Status of projects with tag: {tag}"},
+                        ],
+                    },
+                ],
+                "direction": "down",
+                "showactive": True,
+            }
+        ],
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -264,10 +310,10 @@ def main():
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
         projects = sorted(projects, key=lambda x: x["project_name"])
 
+    
     if projects:
         unique_tags = get_unique_tags(projects)
         selected_tags = st.multiselect("Select a project tag:", unique_tags)
-
         for tag in selected_tags:
             multi_projects = [
                 project for project in projects if tag in project["project_tags"]
