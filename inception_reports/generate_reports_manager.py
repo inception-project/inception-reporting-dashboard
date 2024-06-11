@@ -85,10 +85,11 @@ def startup():
                 f"You are currently using version ({current_version}). Please update the package."
             )
 
+
 def get_project_info():
     try:
-        pyproject_path = os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml')
-        with open(pyproject_path, 'r') as f:
+        pyproject_path = os.path.join(os.path.dirname(__file__), "..", "pyproject.toml")
+        with open(pyproject_path, "r") as f:
             pyproject_data = toml.load(f)
         version = pyproject_data["project"].get("version")
         name = pyproject_data["project"].get("name")
@@ -104,11 +105,14 @@ def check_package_version(current_version, package_name):
         response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
         if response.status_code == 200:
             latest_version = response.json()["info"]["version"]
-            if pkg_resources.parse_version(current_version) < pkg_resources.parse_version(latest_version):
+            if pkg_resources.parse_version(
+                current_version
+            ) < pkg_resources.parse_version(latest_version):
                 return latest_version
     except requests.RequestException:
         return None
     return None
+
 
 def create_directory_in_home():
     """
@@ -179,15 +183,21 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                     with open(project_meta_path, "r") as project_meta_file:
                         project_meta = json.load(project_meta_file)
                         description = project_meta.get("description", "")
-                        project_tags = [
-                            translate_tag(word.strip("#"))
-                            for word in description.split()
-                            if word.startswith("#")
-                        ] if description else []
+                        project_tags = (
+                            [
+                                translate_tag(word.strip("#"))
+                                for word in description.split()
+                                if word.startswith("#")
+                            ]
+                            if description
+                            else []
+                        )
 
                         project_documents = project_meta.get("source_documents")
                         if not project_documents:
-                            raise ValueError("No source documents found in the project.")
+                            raise ValueError(
+                                "No source documents found in the project."
+                            )
 
                 annotations = {}
                 annotation_folders = [
@@ -245,6 +255,7 @@ def login_to_inception(api_url, username, password):
             return False, None
     return False, None
 
+
 def select_method_to_import_data():
     """
     Allows the user to select a method to import data for generating reports.
@@ -258,7 +269,7 @@ def select_method_to_import_data():
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
         )
-        projects_folder = st.sidebar.text_input("Projects Folder:", value="data/gemtex_demo_projects")
+        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
         button = st.sidebar.button("Generate Reports")
         if button:
             st.session_state["method"] = "Manually"
@@ -401,8 +412,11 @@ def export_data(project_data, output_directory=None):
         os.makedirs(output_directory)
 
     project_name = project_data["project_name"]
+
+    project_data["created"] = datetime.now().date().isoformat()
+
     with open(
-        f"{output_directory}/{project_name.split('.')[0]}_data_{current_date}.json", "w"
+        f"{output_directory}/{project_name.split('.')[0]}_{current_date}.json", "w"
     ) as output_file:
         json.dump(project_data, output_file, indent=4)
     st.success(
