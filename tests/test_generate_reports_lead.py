@@ -17,13 +17,17 @@
 import os
 from unittest.mock import MagicMock, patch
 
-from inception_reports.generate_reports_lead import get_unique_tags, plot_multiples, read_dir
+from inception_reports.generate_reports_lead import (
+    get_unique_tags,
+    plot_multiples,
+    read_dir,
+)
 
 
 def test_get_unique_tags():
     """
     Test case for the get_unique_tags function.
-    
+
     This test case verifies that the get_unique_tags function returns the expected result
     when given a list of projects with tags.
     """
@@ -105,6 +109,14 @@ def test_plot_project_progress():
             "CURATION_FINISHED": 0,
             "NEW": 4,
         },
+        "doc_token_categories": {
+            "ANNOTATION_IN_PROGRESS": 13339,
+            "ANNOTATION_FINISHED": 0,
+            "CURATION_IN_PROGRESS": 8092,
+            "CURATION_FINISHED": 0,
+            "NEW": 0,
+        },
+        "created": "2024-06-11",
     }
 
     plot_multiples([project_data], ["tag1", "tag2", "tag3"])

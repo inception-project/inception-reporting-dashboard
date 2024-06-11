@@ -87,13 +87,14 @@ def test_export_data(tmpdir):
             "CURATION_IN_PROGRESS": 3,
             "CURATION_FINISHED": 7,
         },
+        "created": "2024-06-11"
     }
 
     current_date = datetime.now().strftime("%Y_%m_%d")
     output_directory = tmpdir.mkdir("output")
     export_data(project_data, output_directory)
 
-    expected_file_path = os.path.join(output_directory, f"exported_data_{current_date}/{project_data['project_name']}_data_{current_date}.json")
+    expected_file_path = os.path.join(output_directory, f"exported_data_{current_date}/{project_data['project_name']}_{current_date}.json")
     assert os.path.exists(expected_file_path)
 
     with open(expected_file_path, "r") as output_file:
