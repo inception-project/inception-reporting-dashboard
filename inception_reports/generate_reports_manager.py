@@ -374,7 +374,20 @@ def get_type_counts(annotations):
         ]
 
         for type_name, count in type_names:
-            if type_name is None:
+            # if type_name is None:
+            if type_name not in ["Token", "PHI"]:
+                continue
+
+            if type_name == "PHI":
+                annotations = cas.select("webanno.custom.PHI")
+                for annotation in annotations:
+                    if annotation.kind not in type_count_dict:
+                        type_count_dict[annotation.kind] = {"total": 0, "documents": {}}
+                    type_count_dict[annotation.kind]["total"] += 1
+
+                    if doc_id not in type_count_dict[annotation.kind]["documents"]:
+                        type_count_dict[annotation.kind]["documents"][doc_id] = 0
+                    type_count_dict[annotation.kind]["documents"][doc_id] += 1
                 continue
 
             if type_name not in type_count_dict:
@@ -523,6 +536,9 @@ def plot_project_progress(project) -> None:
     df_pie_tokens = pd.DataFrame(
         {"Labels": pie_labels, "Sizes": data_sizes_tokens}
     ).sort_values(by="Labels", ascending=True)
+
+
+    type_counts.pop("Token", None)
 
     df_bar = pd.DataFrame(
         {
