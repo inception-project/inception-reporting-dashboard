@@ -400,19 +400,19 @@ def get_type_counts(annotations):
             type_name = find_element_by_name(layer_definitions, t.name)
 
             if type_name not in type_count:
-                type_count[type_name] = {"documents": {}}
+                type_count[type_name] = {"documents": {}, "features": {}}
 
             for feature in annotations_features:
-                if feature.name not in type_count[type_name]:
-                    type_count[type_name][feature.name] = {
+                if feature.name not in type_count[type_name]["features"]:
+                    type_count[type_name]["features"][feature.name] = {
                         "total": 0,
                         "documents": {},
                     }
-                type_count[type_name][feature.name]["total"] += 1
+                type_count[type_name]["features"][feature.name]["total"] += 1
 
-                if doc_id not in type_count[type_name][feature.name]["documents"]:
-                    type_count[type_name][feature.name]["documents"][doc_id] = 0
-                type_count[type_name][feature.name]["documents"][doc_id] += 1
+                if doc_id not in type_count[type_name]["features"][feature.name]["documents"]:
+                    type_count[type_name]["features"][feature.name]["documents"][doc_id] = 0
+                type_count[type_name]["features"][feature.name]["documents"][doc_id] += 1
 
             if doc_id not in type_count[type_name]["documents"]:
                 type_count[type_name]["documents"][doc_id] = 0
@@ -420,14 +420,9 @@ def get_type_counts(annotations):
 
     for type_name in type_count:
         type_count[type_name]["total"] = 0
-        for feature_name in type_count[type_name]:
+        for feature_name in type_count[type_name]["features"]:
             if feature_name != "documents" and feature_name != "total":
-                type_count[type_name]["total"] += type_count[type_name][feature_name][
-                    "total"
-                ]
-
-    with open("type_count_dict.json", "w") as f:
-        json.dump(type_count, f, indent=4)
+                type_count[type_name]["total"] += type_count[type_name]["features"][feature_name]["total"]
 
     type_count = {k: v for k, v in type_count.items() if v["total"] > 0}
     type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"]))
