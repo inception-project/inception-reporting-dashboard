@@ -269,7 +269,9 @@ def select_method_to_import_data():
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
         )
-        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
+        projects_folder = st.sidebar.text_input(
+            "Projects Folder:", value="data/gemtex_demo_projects"
+        )
         button = st.sidebar.button("Generate Reports")
         if button:
             st.session_state["method"] = "Manually"
@@ -368,35 +370,55 @@ def get_type_counts(annotations):
     for doc_id, cas in annotations.items():
         # Get the list of types for the current CAS object
         type_names = [
-            (find_element_by_name(layer_definitions, t.name), len(cas.select(t.name)))
+            (t, len(cas.select(t.name)))
             for t in cas.typesystem.get_types()
             if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
         ]
 
-        for type_name, count in type_names:
-            # if type_name is None:
-            if type_name not in ["Token", "PHI"]:
+        for type, count in type_names:
+            
+            if type.name in [
+                "uima.tcas.DocumentAnnotation",
+                "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
+                "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
+                "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData",
+                "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagDescription",
+                "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagsetDescription",
+                None,
+            ]:
                 continue
 
-            if type_name == "PHI":
-                annotations = cas.select("webanno.custom.PHI")
-                for annotation in annotations:
-                    if annotation.kind not in type_count_dict:
-                        type_count_dict[annotation.kind] = {"total": 0, "documents": {}}
-                    type_count_dict[annotation.kind]["total"] += 1
+            annotations_features = []
+            for feature in type.all_features:
+                if feature not in [
+                    cassis.typesystem.FEATURE_BASE_NAME_END,
+                    cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
+                    cassis.typesystem.FEATURE_BASE_NAME_SOFA,
+                ]:
+                    annotations_features.append(feature)
 
-                    if doc_id not in type_count_dict[annotation.kind]["documents"]:
-                        type_count_dict[annotation.kind]["documents"][doc_id] = 0
-                    type_count_dict[annotation.kind]["documents"][doc_id] += 1
-                continue
+            type.name = find_element_by_name(layer_definitions, type.name)
 
-            if type_name not in type_count_dict:
-                type_count_dict[type_name] = {"total": 0, "documents": {}}
-            type_count_dict[type_name]["total"] += count
+            if type.name not in type_count_dict:
+                type_count_dict[type.name] = {}
 
-            if doc_id not in type_count_dict[type_name]["documents"]:
-                type_count_dict[type_name]["documents"][doc_id] = 0
-            type_count_dict[type_name]["documents"][doc_id] += count
+            for feature in annotations_features:
+                if feature.name not in type_count_dict[type.name]:
+                    type_count_dict[type.name][feature.name] = {
+                        "total": 0,
+                        "documents": {},
+                    }
+                type_count_dict[type.name][feature.name]["total"] += 1
+
+                if doc_id not in type_count_dict[type.name][feature.name]["documents"]:
+                    type_count_dict[type.name][feature.name]["documents"][doc_id] = 0
+                type_count_dict[type.name][feature.name]["documents"][doc_id] += 1
+
+    for type_name in type_count_dict:
+        type_count_dict[type_name]["total"] = sum(
+            type_count_dict[type_name][feature_name]["total"]
+            for feature_name in type_count_dict[type_name]
+        )
 
     type_count_dict = {k: v for k, v in type_count_dict.items() if v["total"] > 0}
     type_count_dict = dict(
@@ -537,8 +559,7 @@ def plot_project_progress(project) -> None:
         {"Labels": pie_labels, "Sizes": data_sizes_tokens}
     ).sort_values(by="Labels", ascending=True)
 
-
-    type_counts.pop("Token", None)
+    # type_counts.pop("Token", None)
 
     df_bar = pd.DataFrame(
         {
@@ -633,7 +654,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=60 * len(df_bar),
+        height=120 * len(df_bar),
         font=dict(size=18),
         legend=dict(font=dict(size=12)),
         paper_bgcolor="rgba(0,0,0,0)",
