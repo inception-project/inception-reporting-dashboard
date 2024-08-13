@@ -359,7 +359,7 @@ def get_type_counts(annotations):
         dict: A dictionary containing the count of each type, both total and per document.
               The structure is {type_name: {'total': count, 'documents': {doc_id: count}}}.
     """
-    type_count_dict = {}
+    type_count = {}
 
     # Assuming that all documents have the same layer definition
     first_doc = next(iter(annotations.values()))
@@ -375,9 +375,9 @@ def get_type_counts(annotations):
             if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
         ]
 
-        for type, count in type_names:
-            
-            if type.name in [
+        for t, count in type_names:
+
+            if t.name in [
                 "uima.tcas.DocumentAnnotation",
                 "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
                 "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
@@ -389,43 +389,50 @@ def get_type_counts(annotations):
                 continue
 
             annotations_features = []
-            for feature in type.all_features:
-                if feature not in [
+            for feature in t.all_features:
+                if feature.name not in [
                     cassis.typesystem.FEATURE_BASE_NAME_END,
                     cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
                     cassis.typesystem.FEATURE_BASE_NAME_SOFA,
                 ]:
                     annotations_features.append(feature)
 
-            type.name = find_element_by_name(layer_definitions, type.name)
+            type_name = find_element_by_name(layer_definitions, t.name)
 
-            if type.name not in type_count_dict:
-                type_count_dict[type.name] = {}
+            if type_name not in type_count:
+                type_count[type_name] = {"documents": {}}
 
             for feature in annotations_features:
-                if feature.name not in type_count_dict[type.name]:
-                    type_count_dict[type.name][feature.name] = {
+                if feature.name not in type_count[type_name]:
+                    type_count[type_name][feature.name] = {
                         "total": 0,
                         "documents": {},
                     }
-                type_count_dict[type.name][feature.name]["total"] += 1
+                type_count[type_name][feature.name]["total"] += 1
 
-                if doc_id not in type_count_dict[type.name][feature.name]["documents"]:
-                    type_count_dict[type.name][feature.name]["documents"][doc_id] = 0
-                type_count_dict[type.name][feature.name]["documents"][doc_id] += 1
+                if doc_id not in type_count[type_name][feature.name]["documents"]:
+                    type_count[type_name][feature.name]["documents"][doc_id] = 0
+                type_count[type_name][feature.name]["documents"][doc_id] += 1
 
-    for type_name in type_count_dict:
-        type_count_dict[type_name]["total"] = sum(
-            type_count_dict[type_name][feature_name]["total"]
-            for feature_name in type_count_dict[type_name]
-        )
+            if doc_id not in type_count[type_name]["documents"]:
+                type_count[type_name]["documents"][doc_id] = 0
+            type_count[type_name]["documents"][doc_id] += count
 
-    type_count_dict = {k: v for k, v in type_count_dict.items() if v["total"] > 0}
-    type_count_dict = dict(
-        sorted(type_count_dict.items(), key=lambda item: item[1]["total"])
-    )
+    for type_name in type_count:
+        type_count[type_name]["total"] = 0
+        for feature_name in type_count[type_name]:
+            if feature_name != "documents" and feature_name != "total":
+                type_count[type_name]["total"] += type_count[type_name][feature_name][
+                    "total"
+                ]
 
-    return type_count_dict
+    with open("type_count_dict.json", "w") as f:
+        json.dump(type_count, f, indent=4)
+
+    type_count = {k: v for k, v in type_count.items() if v["total"] > 0}
+    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"]))
+
+    return type_count
 
 
 def export_data(project_data, output_directory=None):
@@ -654,7 +661,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=120 * len(df_bar),
+        height=60 * len(df_bar),
         font=dict(size=18),
         legend=dict(font=dict(size=12)),
         paper_bgcolor="rgba(0,0,0,0)",
