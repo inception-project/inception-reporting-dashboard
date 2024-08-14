@@ -22,6 +22,7 @@ import shutil
 import time
 import zipfile
 from datetime import datetime
+import logging
 
 import cassis
 import pandas as pd
@@ -45,6 +46,8 @@ if st.session_state.get("flag"):
     time.sleep(0.01)
     st.rerun()
 
+
+logger = logging.getLogger(__name__)
 
 def startup():
 
@@ -264,7 +267,7 @@ def select_method_to_import_data():
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=0
     )
-
+    logger.info(f"Set {method} to import data")
     if method == "Manually":
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
@@ -315,12 +318,13 @@ def select_method_to_import_data():
                         project = inception_client.api.project(project_id)
                         selected_projects_names.append(project.project_name)
                         file_path = f"{projects_folder}/{project.project_name}.zip"
-                        st.sidebar.write(f"Importing project: {project.project_name}")
+                        st.sidebar.write(f"Importing project: {project.project_name}")                        
                         project_export = inception_client.api.export_project(
                             project, "jsoncas"
                         )
                         with open(file_path, "wb") as f:
                             f.write(project_export)
+                        logger.info(f"Imported project {project} into {file_path}")
 
                 st.session_state["method"] = "API"
                 st.session_state["projects"] = read_dir(
@@ -466,7 +470,7 @@ def plot_project_progress(project) -> None:
         "NEW": 0,
     }
 
-    for doc in project_documents:
+    for doc in project_documents:        
         state = doc["state"]
         if state in doc_categories:
             doc_categories[state] += 1
@@ -480,6 +484,7 @@ def plot_project_progress(project) -> None:
     }
 
     for doc in project_documents:
+        logger.info(f"Start processing tokens for document {doc}")
         state = doc["state"]
         if state in doc_token_categories:
             doc_token_categories[state] += type_counts["Token"]["documents"][
@@ -636,6 +641,8 @@ def plot_project_progress(project) -> None:
 
 
 def main():
+
+    logger.info("STARTING INCEpTION Reporting Dashboard - Manager")
     startup()
     create_directory_in_home()
 
@@ -645,8 +652,8 @@ def main():
     )
     st.title("INCEpTION Reporting Dashboard")
     st.write("<hr>", unsafe_allow_html=True)
-
-    select_method_to_import_data()
+    
+    select_method_to_import_data()    
 
     if "method" in st.session_state and "projects" in st.session_state:
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]

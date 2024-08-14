@@ -18,7 +18,45 @@ import os
 import sys
 import argparse
 from streamlit.web import cli
+import logging
+import logging.config
 
+def setup_logging(log_level:str, log_dir:str = "/var/log/inception" ):
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    log_file = os.path.join(log_dir, 'app.log') 
+
+    logging_config = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'standard': {
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            },
+        },
+        'handlers': {
+            'console': {
+                'level': log_level,
+                'class': 'logging.StreamHandler',
+                'formatter': 'standard',
+            },
+            'file': {
+                'level': log_level,
+                'class': 'logging.FileHandler',
+                'filename': log_file,
+                'formatter': 'standard',
+            },
+        },
+        'loggers': {
+            '': { 
+                'handlers': ['console', 'file'],
+                'level': log_level,
+                'propagate': True
+            },
+        }
+    }
+
+    logging.config.dictConfig(logging_config)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -29,8 +67,11 @@ def main():
         "-m", "--manager", help="You are managing a single project, or a single location.", action="store_true"
     )
     group.add_argument("-l", "--lead", help="You are leading multiple projects, or multiple locations.", action="store_true")
-
+    
+    parser.add_argument('--logger',default='INFO',choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],help='Set the logging level')
     args = parser.parse_args()
+
+    setup_logging(args.logger)
 
     if args.manager:
         sys.argv = [
