@@ -72,14 +72,17 @@ def main():
     args = parser.parse_args()
 
     setup_logging(args.logger)
+    log = logging.getLogger(__name__)
 
     if args.manager:
+        log.info("STARTING INCEpTION Reporting Dashboard - Manager")
         sys.argv = [
             "streamlit",
             "run",
             f"{os.path.dirname(os.path.realpath(__file__))}/generate_reports_manager.py",
         ]
     elif args.lead:
+        log.info("STARTING INCEpTION Reporting Dashboard - Lead")
         sys.argv = [
             "streamlit",
             "run",
