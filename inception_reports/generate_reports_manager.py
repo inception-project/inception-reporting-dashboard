@@ -347,7 +347,6 @@ def find_element_by_name(element_list, name):
             return element.uiName
     return name.split(".")[-1]
 
-
 def get_type_counts(annotations):
     """
     Calculate the count of each type in the given annotations. Each annotation is a CAS object.
@@ -359,6 +358,7 @@ def get_type_counts(annotations):
         dict: A dictionary containing the count of each type, both total and per document.
               The structure is {type_name: {'total': count, 'documents': {doc_id: count}}}.
     """
+
     type_count = {}
 
     # Assuming that all documents have the same layer definition
@@ -367,66 +367,68 @@ def get_type_counts(annotations):
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
     )
 
+    # Define a set of types to exclude for clarity and performance
+    excluded_types = {
+        "uima.tcas.DocumentAnnotation",
+        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition",
+        "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
+        "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
+        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData",
+        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagDescription",
+        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagsetDescription",
+        None,
+    }
+
     for doc_id, cas in annotations.items():
-        # Get the list of types for the current CAS object
-        type_names = [
-            (t, len(cas.select(t.name)))
-            for t in cas.typesystem.get_types()
-            if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+        # Get the list of relevant types for the current CAS object
+        relevant_types = [
+            t for t in cas.typesystem.get_types()
+            if t.name not in excluded_types
         ]
 
-        for t, count in type_names:
-
-            if t.name in [
-                "uima.tcas.DocumentAnnotation",
-                "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
-                "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
-                "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData",
-                "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagDescription",
-                "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagsetDescription",
-                None,
-            ]:
+        for t in relevant_types:
+            cas_select = cas.select(t.name)
+            count = len(cas_select)
+            if count == 0:
                 continue
 
-            annotations_features = []
-            for feature in t.all_features:
-                if feature.name not in [
+            # Filter for the features that are relevant
+            annotations_features = [
+                feature for feature in t.all_features
+                if feature.name not in {
                     cassis.typesystem.FEATURE_BASE_NAME_END,
                     cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
                     cassis.typesystem.FEATURE_BASE_NAME_SOFA,
-                ]:
-                    annotations_features.append(feature)
+                }
+            ]
 
+            # Get UI Name for layer type
             type_name = find_element_by_name(layer_definitions, t.name)
 
             if type_name not in type_count:
-                type_count[type_name] = {"documents": {}, "features": {}}
+                type_count[type_name] = {
+                    "total": 0,
+                    "documents": {},
+                    "features": {}
+                }
 
-            for feature in annotations_features:
-                if feature.name not in type_count[type_name]["features"]:
-                    type_count[type_name]["features"][feature.name] = {
-                        "total": 0,
-                        "documents": {},
-                    }
-                type_count[type_name]["features"][feature.name]["total"] += 1
-
-                if doc_id not in type_count[type_name]["features"][feature.name]["documents"]:
-                    type_count[type_name]["features"][feature.name]["documents"][doc_id] = 0
-                type_count[type_name]["features"][feature.name]["documents"][doc_id] += 1
-
-            if doc_id not in type_count[type_name]["documents"]:
-                type_count[type_name]["documents"][doc_id] = 0
+            type_count[type_name]["total"] += count
+            type_count[type_name]["documents"].setdefault(doc_id, 0)
             type_count[type_name]["documents"][doc_id] += count
 
-    for type_name in type_count:
-        type_count[type_name]["total"] = 0
-        for feature_name in type_count[type_name]["features"]:
-            if feature_name != "documents" and feature_name != "total":
-                type_count[type_name]["total"] += type_count[type_name]["features"][feature_name]["total"]
+            # Count the feature occurrences within the selected CAS
+            for feature in annotations_features:
+                for cas_item in cas_select:
+                    feature_value = cas_item.get(feature.name)
+                    if feature_value is None:
+                        continue
+                    if feature_value not in type_count[type_name]["features"]:
+                        type_count[type_name]["features"][feature_value] = {}
 
-    type_count = {k: v for k, v in type_count.items() if v["total"] > 0}
+                    type_count[type_name]["features"][feature_value].setdefault(doc_id, 0)
+                    type_count[type_name]["features"][feature_value][doc_id] += 1
+
     type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"]))
-
     return type_count
 
 
@@ -656,7 +658,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=60 * len(df_bar),
+        height=120 * len(df_bar),
         font=dict(size=18),
         legend=dict(font=dict(size=12)),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -692,6 +694,7 @@ def main():
         projects = sorted(projects, key=lambda x: x["name"])
         for project in projects:
             plot_project_progress(project)
+            # st.write("Test")
 
 
 if __name__ == "__main__":
