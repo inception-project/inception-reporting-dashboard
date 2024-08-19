@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import time
+from turtle import title
 import zipfile
 from datetime import datetime
 
@@ -69,7 +70,7 @@ def startup():
         </style>
 
         <style>
-        section.main > div {max-width:90%}
+        section.main > div {max-width:95%}
         </style>
         """,
         unsafe_allow_html=True,
@@ -565,15 +566,7 @@ def plot_project_progress(project) -> None:
 
     # type_counts.pop("Token", None)
 
-    df_bar = pd.DataFrame(
-        {
-            "Types": type_counts.keys(),
-            "Counts": [type_counts[type_name]["total"] for type_name in type_counts],
-        }
-    )
-
     pie_chart = go.Figure()
-
     pie_chart.add_trace(
         go.Pie(
             labels=df_pie_docs["Labels"],
@@ -633,20 +626,72 @@ def plot_project_progress(project) -> None:
         ],
     )
 
+
+    df_bar = pd.DataFrame(
+            {
+                "Types": type_counts.keys(),
+                "Counts": [type_counts[type_name]["total"] for type_name in type_counts],
+            }
+        )
+    
     bar_chart = go.Figure()
 
-    for _, row in df_bar.iterrows():
-        bar_chart.add_trace(
-            go.Bar(
-                y=[row["Types"]],
-                x=[row["Counts"]],
-                orientation="h",
-                name=row["Types"],
-                legendgroup=row["Types"],
-                showlegend=True,
-                hoverinfo="x+y",
+    main_traces = 0
+    feature_traces = 0
+
+    # Add bar traces for the total counts by category
+    for category, details in type_counts.items():
+        bar_chart.add_trace(go.Bar(
+            y=[category],
+            x=[details["total"]],
+            text=[details["total"]],
+            textposition='auto',
+            name=category.capitalize(),
+            visible=True,
+            orientation="h",
+            hoverinfo="x+y"
+        ))
+        main_traces += 1
+
+    feature_buttons = []
+    for category, details in type_counts.items():
+        if len(details['features']) >= 2:
+            for subcategory, subvalues in details['features'].items():
+                bar_chart.add_trace(go.Bar(
+                    y=[subcategory],
+                    x=[sum(subvalues.values())],
+                    text=[sum(subvalues.values())],
+                    textposition='auto',
+                    name=subcategory,
+                    visible=False,
+                    orientation="h",
+                    hoverinfo="x+y"
+                ))
+                feature_traces += 1
+            
+            visibility = [False] * main_traces + [True] * feature_traces
+            
+            feature_buttons.append(
+                {
+                    "args": [
+                        {"visible": visibility},
+                        # {"title": f"{category} Features Counts"}
+                    ],
+                    "label": category,
+                    "method": "update"
+                }
             )
-        )
+
+    bar_chart_buttons = [
+        {
+            "args": [
+                {"visible": [True] * main_traces + [False] * feature_traces},
+                # {"title": "Types of Annotations"}
+            ],
+            "label": "Totals",
+            "method": "update"
+        }
+    ] + feature_buttons
 
     bar_chart.update_layout(
         title=dict(
@@ -658,13 +703,27 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=120 * len(df_bar),
+        height=160 * len(df_bar),
         font=dict(size=18),
-        legend=dict(font=dict(size=12)),
+        legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=40, r=40),
+        margin=dict(l=10, r=10),
         colorway=px.colors.qualitative.Plotly,
+    )
+
+    bar_chart.update_layout(
+        updatemenus=[
+            {
+                "buttons": bar_chart_buttons,
+                "direction": "right",
+                "showactive": True,
+                "x": 0.45,
+                "y": 1.15,
+                "xanchor": "center",
+                "yanchor": "top",
+            }
+        ]
     )
 
     col1, _, col3 = st.columns([1, 0.1, 1])
@@ -694,7 +753,6 @@ def main():
         projects = sorted(projects, key=lambda x: x["name"])
         for project in projects:
             plot_project_progress(project)
-            # st.write("Test")
 
 
 if __name__ == "__main__":
