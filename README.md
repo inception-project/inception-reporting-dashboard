@@ -9,7 +9,7 @@ In case the project is part of a bigger project, the project progress can be exp
 ## Getting started
 
 1. Ensure you have python 3.11 or higher (check it using python --version)
-2. Install the package using ``pip install inception-reports``
+2. Install the package using ``pip install -U inception-reports``
 3. Run the script using ``inception_reports --help`` this will show you the options you have:
     1. Run it with ``inception_reports --manager`` if you have one python project, or are responsible for one location.
     2. Run it with ``inception_reports --lead`` if you're leading multiple projects, or multiple locations.
@@ -17,4 +17,4 @@ In case the project is part of a bigger project, the project progress can be exp
 
 ## Issues
 
-This package is under early developments, if you notice any bugs, or face any issues, do not hesitate to open a [Github issue](https://github.com/inception-project/inception-reporting-dashboard/issues).
+This package is under early development, if you notice any bugs, or face any issues, do not hesitate to open a [Github issue](https://github.com/inception-project/inception-reporting-dashboard/issues).
