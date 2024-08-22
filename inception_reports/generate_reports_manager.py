@@ -428,7 +428,10 @@ def get_type_counts(annotations):
                     type_count[type_name]["features"][feature_value].setdefault(doc_id, 0)
                     type_count[type_name]["features"][feature_value][doc_id] += 1
 
-    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"]))
+
+    for type_name, type_data in type_count.items():
+        type_data["features"] = dict(sorted(type_data["features"].items(), key=lambda x: sum(x[1].values()), reverse=True))
+    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
     return type_count
 
 
