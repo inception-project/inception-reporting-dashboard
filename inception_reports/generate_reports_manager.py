@@ -20,7 +20,6 @@ import json
 import os
 import shutil
 import time
-from turtle import title
 import zipfile
 from datetime import datetime
 
@@ -564,8 +563,6 @@ def plot_project_progress(project) -> None:
         {"Labels": pie_labels, "Sizes": data_sizes_tokens}
     ).sort_values(by="Labels", ascending=True)
 
-    # type_counts.pop("Token", None)
-
     pie_chart = go.Figure()
     pie_chart.add_trace(
         go.Pie(
@@ -625,14 +622,6 @@ def plot_project_progress(project) -> None:
             }
         ],
     )
-
-
-    df_bar = pd.DataFrame(
-            {
-                "Types": type_counts.keys(),
-                "Counts": [type_counts[type_name]["total"] for type_name in type_counts],
-            }
-        )
     
     bar_chart = go.Figure()
 
@@ -674,8 +663,7 @@ def plot_project_progress(project) -> None:
             feature_buttons.append(
                 {
                     "args": [
-                        {"visible": visibility},
-                        # {"title": f"{category} Features Counts"}
+                        {"visible": visibility}
                     ],
                     "label": category,
                     "method": "update"
@@ -685,10 +673,9 @@ def plot_project_progress(project) -> None:
     bar_chart_buttons = [
         {
             "args": [
-                {"visible": [True] * main_traces + [False] * feature_traces},
-                # {"title": "Types of Annotations"}
+                {"visible": [True] * main_traces + [False] * feature_traces}
             ],
-            "label": "Totals",
+            "label": "Overview",
             "method": "update"
         }
     ] + feature_buttons
@@ -703,7 +690,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=160 * len(df_bar),
+        height=160 * len(type_counts),
         font=dict(size=18),
         legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -716,7 +703,7 @@ def plot_project_progress(project) -> None:
         updatemenus=[
             {
                 "buttons": bar_chart_buttons,
-                "direction": "right",
+                "direction": "down",
                 "showactive": True,
                 "x": 0.45,
                 "y": 1.15,
