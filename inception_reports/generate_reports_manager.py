@@ -69,7 +69,7 @@ def startup():
         </style>
 
         <style>
-        section.main > div {max-width:90%}
+        section.main > div {max-width:95%}
         </style>
         """,
         unsafe_allow_html=True,
@@ -269,7 +269,9 @@ def select_method_to_import_data():
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
         )
-        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
+        projects_folder = st.sidebar.text_input(
+            "Projects Folder:", value="data/gemtex_demo_projects"
+        )
         button = st.sidebar.button("Generate Reports")
         if button:
             st.session_state["method"] = "Manually"
@@ -345,7 +347,6 @@ def find_element_by_name(element_list, name):
             return element.uiName
     return name.split(".")[-1]
 
-
 def get_type_counts(annotations):
     """
     Calculate the count of each type in the given annotations. Each annotation is a CAS object.
@@ -357,7 +358,8 @@ def get_type_counts(annotations):
         dict: A dictionary containing the count of each type, both total and per document.
               The structure is {type_name: {'total': count, 'documents': {doc_id: count}}}.
     """
-    type_count_dict = {}
+
+    type_count = {}
 
     # Assuming that all documents have the same layer definition
     first_doc = next(iter(annotations.values()))
@@ -365,32 +367,72 @@ def get_type_counts(annotations):
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
     )
 
+    # Define a set of types to exclude for clarity and performance
+    excluded_types = {
+        "uima.tcas.DocumentAnnotation",
+        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition",
+        "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
+        "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
+        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData",
+        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagDescription",
+        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagsetDescription",
+        None,
+    }
+
     for doc_id, cas in annotations.items():
-        # Get the list of types for the current CAS object
-        type_names = [
-            (find_element_by_name(layer_definitions, t.name), len(cas.select(t.name)))
-            for t in cas.typesystem.get_types()
-            if t.name != "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+        # Get the list of relevant types for the current CAS object
+        relevant_types = [
+            t for t in cas.typesystem.get_types()
+            if t.name not in excluded_types
         ]
 
-        for type_name, count in type_names:
-            if type_name is None:
+        for t in relevant_types:
+            cas_select = cas.select(t.name)
+            count = len(cas_select)
+            if count == 0:
                 continue
 
-            if type_name not in type_count_dict:
-                type_count_dict[type_name] = {"total": 0, "documents": {}}
-            type_count_dict[type_name]["total"] += count
+            # Filter for the features that are relevant
+            annotations_features = [
+                feature for feature in t.all_features
+                if feature.name not in {
+                    cassis.typesystem.FEATURE_BASE_NAME_END,
+                    cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
+                    cassis.typesystem.FEATURE_BASE_NAME_SOFA,
+                }
+            ]
 
-            if doc_id not in type_count_dict[type_name]["documents"]:
-                type_count_dict[type_name]["documents"][doc_id] = 0
-            type_count_dict[type_name]["documents"][doc_id] += count
+            # Get UI Name for layer type
+            type_name = find_element_by_name(layer_definitions, t.name)
 
-    type_count_dict = {k: v for k, v in type_count_dict.items() if v["total"] > 0}
-    type_count_dict = dict(
-        sorted(type_count_dict.items(), key=lambda item: item[1]["total"])
-    )
+            if type_name not in type_count:
+                type_count[type_name] = {
+                    "total": 0,
+                    "documents": {},
+                    "features": {}
+                }
 
-    return type_count_dict
+            type_count[type_name]["total"] += count
+            type_count[type_name]["documents"].setdefault(doc_id, 0)
+            type_count[type_name]["documents"][doc_id] += count
+
+            # Count the feature occurrences within the selected CAS
+            for feature in annotations_features:
+                for cas_item in cas_select:
+                    feature_value = cas_item.get(feature.name)
+                    if feature_value is None:
+                        continue
+                    if feature_value not in type_count[type_name]["features"]:
+                        type_count[type_name]["features"][feature_value] = {}
+
+                    type_count[type_name]["features"][feature_value].setdefault(doc_id, 0)
+                    type_count[type_name]["features"][feature_value][doc_id] += 1
+
+
+    for type_name, type_data in type_count.items():
+        type_data["features"] = dict(sorted(type_data["features"].items(), key=lambda x: sum(x[1].values()), reverse=True))
+    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+    return type_count
 
 
 def export_data(project_data, output_directory=None):
@@ -524,15 +566,7 @@ def plot_project_progress(project) -> None:
         {"Labels": pie_labels, "Sizes": data_sizes_tokens}
     ).sort_values(by="Labels", ascending=True)
 
-    df_bar = pd.DataFrame(
-        {
-            "Types": type_counts.keys(),
-            "Counts": [type_counts[type_name]["total"] for type_name in type_counts],
-        }
-    )
-
     pie_chart = go.Figure()
-
     pie_chart.add_trace(
         go.Pie(
             labels=df_pie_docs["Labels"],
@@ -591,21 +625,63 @@ def plot_project_progress(project) -> None:
             }
         ],
     )
-
+    
     bar_chart = go.Figure()
 
-    for _, row in df_bar.iterrows():
-        bar_chart.add_trace(
-            go.Bar(
-                y=[row["Types"]],
-                x=[row["Counts"]],
-                orientation="h",
-                name=row["Types"],
-                legendgroup=row["Types"],
-                showlegend=True,
-                hoverinfo="x+y",
+    main_traces = 0
+    feature_traces = 0
+
+    # Add bar traces for the total counts by category
+    for category, details in type_counts.items():
+        bar_chart.add_trace(go.Bar(
+            y=[category],
+            x=[details["total"]],
+            text=[details["total"]],
+            textposition='auto',
+            name=category.capitalize(),
+            visible=True,
+            orientation="h",
+            hoverinfo="x+y"
+        ))
+        main_traces += 1
+
+    feature_buttons = []
+    for category, details in type_counts.items():
+        if len(details['features']) >= 2:
+            for subcategory, subvalues in details['features'].items():
+                bar_chart.add_trace(go.Bar(
+                    y=[subcategory],
+                    x=[sum(subvalues.values())],
+                    text=[sum(subvalues.values())],
+                    textposition='auto',
+                    name=subcategory,
+                    visible=False,
+                    orientation="h",
+                    hoverinfo="x+y"
+                ))
+                feature_traces += 1
+            
+            visibility = [False] * main_traces + [True] * feature_traces
+            
+            feature_buttons.append(
+                {
+                    "args": [
+                        {"visible": visibility}
+                    ],
+                    "label": category,
+                    "method": "update"
+                }
             )
-        )
+
+    bar_chart_buttons = [
+        {
+            "args": [
+                {"visible": [True] * main_traces + [False] * feature_traces}
+            ],
+            "label": "Overview",
+            "method": "update"
+        }
+    ] + feature_buttons
 
     bar_chart.update_layout(
         title=dict(
@@ -617,13 +693,27 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=60 * len(df_bar),
+        height=160 * len(type_counts),
         font=dict(size=18),
-        legend=dict(font=dict(size=12)),
+        legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=40, r=40),
+        margin=dict(l=10, r=10),
         colorway=px.colors.qualitative.Plotly,
+    )
+
+    bar_chart.update_layout(
+        updatemenus=[
+            {
+                "buttons": bar_chart_buttons,
+                "direction": "down",
+                "showactive": True,
+                "x": 0.45,
+                "y": 1.15,
+                "xanchor": "center",
+                "yanchor": "top",
+            }
+        ]
     )
 
     col1, _, col3 = st.columns([1, 0.1, 1])
