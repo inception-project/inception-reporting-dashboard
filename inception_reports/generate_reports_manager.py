@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import defaultdict
 import copy
 import importlib.resources
 import json
@@ -200,13 +201,20 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                             )
 
                 annotations = {}
-                annotation_folders = [
-                    name
-                    for name in zip_file.namelist()
-                    if name.startswith("annotation/")
-                    and name.endswith(".json")
-                    and not name.endswith("INITIAL_CAS.json")
-                ]
+                folder_files = defaultdict(list)
+                for name in zip_file.namelist():
+                    if name.startswith("annotation/") and name.endswith(".json"):
+                        folder = '/'.join(name.split('/')[:-1])
+                        folder_files[folder].append(name)
+
+                annotation_folders = []
+                for folder, files in folder_files.items():
+                    if len(files) == 1 and files[0].endswith("INITIAL_CAS.json"):
+                        annotation_folders.append(files[0])
+                    else:
+                        annotation_folders.extend(
+                            file for file in files if not file.endswith("INITIAL_CAS.json")
+                        )
                 for annotation_file in annotation_folders:
                     subfolder_name = os.path.dirname(annotation_file).split("/")[1]
                     with zip_file.open(annotation_file) as cas_file:
@@ -370,6 +378,7 @@ def get_type_counts(annotations):
     # Define a set of types to exclude for clarity and performance
     excluded_types = {
         "uima.tcas.DocumentAnnotation",
+        "webanno.custom.Metadata",
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition",
         "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
         "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
