@@ -6,12 +6,12 @@ formatters:
 
 handlers:
   console:
-    level: INFO  
+    level: DEBUG  
     class: logging.StreamHandler
     formatter: standard
 
   file:
-    level: INFO
+    level: DEBUG
     class: logging.FileHandler
     filename: app.log  
     formatter: standard

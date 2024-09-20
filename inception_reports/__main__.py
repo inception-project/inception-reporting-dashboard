@@ -22,17 +22,23 @@ import logging
 import logging.config
 import yaml, importlib
 
-def setup_logging(log_level: str = None, 
-    log_dir: str = None
-    ):
+def setup_logging(log_level: str = None,log_dir: str = None):
+    """
+    Sets up logging configuration.
+
+    Args:
+        log_level: The desired log level (e.g., "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
+        log_dir: The directory where log files will be stored.
+    """        
     # Use importlib.resources to access logging_config.yaml
     with importlib.resources.path('inception_reports.config', 'logging_config.yaml') as config_path:
-        log_level = log_level or os.getenv('INCEPTION_LOG_LEVEL', None)
-        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', '/var/log/inception')
-
         # Read logging configuration from YAML file
         with open(config_path, 'r') as file:
             logging_config = yaml.safe_load(file)
+
+        # Override log level and directory if provided
+        log_level = log_level or os.getenv('INCEPTION_LOG_LEVEL', None)
+        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', '/var/log/inception')
 
         # Override log file path
         if not os.path.exists(log_dir):
@@ -57,7 +63,7 @@ def main():
     )
     group.add_argument("-l", "--lead", help="You are leading multiple projects, or multiple locations.", action="store_true")
     
-    parser.add_argument('--logger',default='INFO',choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],help='Set the logging level')
+    parser.add_argument('--logger',choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],help='Set the logging level')
     args = parser.parse_args()
 
     setup_logging(args.logger)
