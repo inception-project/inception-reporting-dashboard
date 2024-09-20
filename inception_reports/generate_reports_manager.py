@@ -48,7 +48,7 @@ if st.session_state.get("flag"):
     st.rerun()
 
 
-log = logging.getLogger(__name__)
+log = logging.getLogger()
 
 def startup():
 
@@ -328,12 +328,13 @@ def select_method_to_import_data():
                         selected_projects_names.append(project.project_name)
                         file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
+                        log.info(f"Importing project {project.project_name} into {file_path} ")
                         project_export = inception_client.api.export_project(
                             project, "jsoncas"
                         )
                         with open(file_path, "wb") as f:
                             f.write(project_export)
-                        log.info(f"Imported project {project.project_name} into {file_path}")
+                        log.debug(f"Import Success")
 
                 st.session_state["method"] = "API"
                 st.session_state["projects"] = read_dir(
@@ -392,6 +393,7 @@ def get_type_counts(annotations):
     }
 
     for doc_id, cas in annotations.items():
+        log.debug(f"Processing {doc_id}")
         # Get the list of relevant types for the current CAS object
         relevant_types = [
             t for t in cas.typesystem.get_types()
@@ -444,6 +446,7 @@ def get_type_counts(annotations):
     for type_name, type_data in type_count.items():
         type_data["features"] = dict(sorted(type_data["features"].items(), key=lambda x: sum(x[1].values()), reverse=True))
     type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+    log.debug(f"Type count object : {type_count}")
     return type_count
 
 
@@ -534,7 +537,7 @@ def plot_project_progress(project) -> None:
     }
 
     for doc in project_documents:
-        log.info(f"Start processing tokens for document {doc}")
+        log.debug(f"Start processing tokens for document {doc}")
         state = doc["state"]
         if state in doc_token_categories:
             doc_token_categories[state] += type_counts["Token"]["documents"][
