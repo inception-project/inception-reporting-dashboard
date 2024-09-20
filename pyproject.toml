@@ -19,6 +19,7 @@ dependencies = [
     "numpy",
     "dkpro-cassis",
     "pycaprio",
+    "PyYAML",
 ]
 
 classifiers = [
@@ -32,7 +33,7 @@ where = ["."]
 include = ["inception_reports"]
 
 [tool.setuptools.package-data]
-"inception_reports" = ["data/*.json"]
+"inception_reports" = ["data/*.json","config/logging_config.yaml"]
 
 [project.scripts]
 inception_reports = "inception_reports.__main__:main"

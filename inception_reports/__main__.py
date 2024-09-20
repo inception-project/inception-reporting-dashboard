@@ -20,43 +20,32 @@ import argparse
 from streamlit.web import cli
 import logging
 import logging.config
+import yaml, importlib
 
-def setup_logging(log_level:str, log_dir:str = "/var/log/inception" ):
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    log_file = os.path.join(log_dir, 'app.log') 
+def setup_logging(log_level: str = None, 
+    log_dir: str = None
+    ):
+    # Use importlib.resources to access logging_config.yaml
+    with importlib.resources.path('inception_reports.config', 'logging_config.yaml') as config_path:
+        log_level = log_level or os.getenv('INCEPTION_LOG_LEVEL', None)
+        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', '/var/log/inception')
 
-    logging_config = {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'formatters': {
-            'standard': {
-                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            },
-        },
-        'handlers': {
-            'console': {
-                'level': log_level,
-                'class': 'logging.StreamHandler',
-                'formatter': 'standard',
-            },
-            'file': {
-                'level': log_level,
-                'class': 'logging.FileHandler',
-                'filename': log_file,
-                'formatter': 'standard',
-            },
-        },
-        'loggers': {
-            '': { 
-                'handlers': ['console', 'file'],
-                'level': log_level,
-                'propagate': True
-            },
-        }
-    }
+        # Read logging configuration from YAML file
+        with open(config_path, 'r') as file:
+            logging_config = yaml.safe_load(file)
 
-    logging.config.dictConfig(logging_config)
+        # Override log file path
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        logging_config['handlers']['file']['filename'] = os.path.join(log_dir, 'app.log')
+
+        # Apply logging configuration
+        logging.config.dictConfig(logging_config)
+
+        # Set log level dynamically if provided
+        if log_level:
+            logger = logging.getLogger()  # Root logger
+            logger.setLevel(log_level.upper())
 
 def main():
     parser = argparse.ArgumentParser(
