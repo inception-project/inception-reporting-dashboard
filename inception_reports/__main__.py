@@ -18,7 +18,40 @@ import os
 import sys
 import argparse
 from streamlit.web import cli
+import logging
+import logging.config
+import yaml, importlib
 
+def setup_logging(log_level: str = None,log_dir: str = None):
+    """
+    Sets up logging configuration.
+
+    Args:
+        log_level: The desired log level (e.g., "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
+        log_dir: The directory where log files will be stored.
+    """        
+    # Use importlib.resources to access logging_config.yaml
+    with importlib.resources.path('inception_reports.config', 'logging_config.yaml') as config_path:
+        # Read logging configuration from YAML file
+        with open(config_path, 'r') as file:
+            logging_config = yaml.safe_load(file)
+
+        # Override log level and directory if provided
+        log_level = log_level or os.getenv('INCEPTION_LOG_LEVEL', None)
+        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', '/var/log/inception')
+
+        # Override log file path
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        logging_config['handlers']['file']['filename'] = os.path.join(log_dir, 'app.log')
+
+        # Apply logging configuration
+        logging.config.dictConfig(logging_config)
+
+        # Set log level dynamically if provided
+        if log_level:
+            logger = logging.getLogger()  # Root logger
+            logger.setLevel(log_level.upper())
 
 def main():
     parser = argparse.ArgumentParser(
@@ -29,16 +62,22 @@ def main():
         "-m", "--manager", help="You are managing a single project, or a single location.", action="store_true"
     )
     group.add_argument("-l", "--lead", help="You are leading multiple projects, or multiple locations.", action="store_true")
-
+    
+    parser.add_argument('--logger',choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],help='Set the logging level')
     args = parser.parse_args()
 
+    setup_logging(args.logger)
+    log = logging.getLogger(__name__)
+
     if args.manager:
+        log.info("STARTING INCEpTION Reporting Dashboard - Manager")
         sys.argv = [
             "streamlit",
             "run",
             f"{os.path.dirname(os.path.realpath(__file__))}/generate_reports_manager.py",
         ]
     elif args.lead:
+        log.info("STARTING INCEpTION Reporting Dashboard - Lead")
         sys.argv = [
             "streamlit",
             "run",

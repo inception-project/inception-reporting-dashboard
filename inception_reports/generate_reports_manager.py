@@ -23,6 +23,7 @@ import shutil
 import time
 import zipfile
 from datetime import datetime
+import logging
 
 import cassis
 import pandas as pd
@@ -46,6 +47,8 @@ if st.session_state.get("flag"):
     time.sleep(0.01)
     st.rerun()
 
+
+log = logging.getLogger()
 
 def startup():
 
@@ -271,8 +274,7 @@ def select_method_to_import_data():
 
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=0
-    )
-
+    )    
     if method == "Manually":
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
@@ -284,7 +286,7 @@ def select_method_to_import_data():
         if button:
             st.session_state["method"] = "Manually"
             st.session_state["projects"] = read_dir(projects_folder)
-            button = False
+            button = False            
             set_sidebar_state("collapsed")
     elif method == "API":
         projects_folder = f"{os.path.expanduser('~')}/.inception_reports/projects"
@@ -326,11 +328,13 @@ def select_method_to_import_data():
                         selected_projects_names.append(project.project_name)
                         file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
+                        log.info(f"Importing project {project.project_name} into {file_path} ")
                         project_export = inception_client.api.export_project(
                             project, "jsoncas"
                         )
                         with open(file_path, "wb") as f:
                             f.write(project_export)
+                        log.debug(f"Import Success")
 
                 st.session_state["method"] = "API"
                 st.session_state["projects"] = read_dir(
@@ -389,6 +393,7 @@ def get_type_counts(annotations):
     }
 
     for doc_id, cas in annotations.items():
+        log.debug(f"Processing {doc_id}")
         # Get the list of relevant types for the current CAS object
         relevant_types = [
             t for t in cas.typesystem.get_types()
@@ -441,6 +446,7 @@ def get_type_counts(annotations):
     for type_name, type_data in type_count.items():
         type_data["features"] = dict(sorted(type_data["features"].items(), key=lambda x: sum(x[1].values()), reverse=True))
     type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+    log.debug(f"Type count object : {type_count}")
     return type_count
 
 
@@ -531,6 +537,7 @@ def plot_project_progress(project) -> None:
     }
 
     for doc in project_documents:
+        log.debug(f"Start processing tokens for document {doc}")
         state = doc["state"]
         if state in doc_token_categories:
             doc_token_categories[state] += type_counts["Token"]["documents"][
@@ -735,6 +742,7 @@ def plot_project_progress(project) -> None:
 
 
 def main():
+
     startup()
     create_directory_in_home()
 
@@ -744,7 +752,6 @@ def main():
     )
     st.title("INCEpTION Reporting Dashboard")
     st.write("<hr>", unsafe_allow_html=True)
-
     select_method_to_import_data()
 
     if "method" in st.session_state and "projects" in st.session_state:
