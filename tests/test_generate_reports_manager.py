@@ -94,7 +94,7 @@ def test_export_data(tmpdir):
     output_directory = tmpdir.mkdir("output")
     export_data(project_data, output_directory)
 
-    expected_file_path = os.path.join(output_directory, f"exported_data_{current_date}/{project_data['project_name']}_{current_date}.json")
+    expected_file_path = os.path.join(output_directory, f"exported_project_data/{project_data['project_name']}_{current_date}.json")
     assert os.path.exists(expected_file_path)
 
     with open(expected_file_path, "r") as output_file:
