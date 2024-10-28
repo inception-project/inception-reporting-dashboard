@@ -20,7 +20,8 @@ import argparse
 from streamlit.web import cli
 import logging
 import logging.config
-import yaml, importlib
+import yaml
+import importlib
 
 def setup_logging(log_level: str = None,log_dir: str = None):
     """
