@@ -710,7 +710,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=160 * len(type_counts),
+        height= min(160 * len(type_counts), 500),
         font=dict(size=18),
         legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
