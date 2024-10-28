@@ -334,7 +334,7 @@ def select_method_to_import_data():
                         )
                         with open(file_path, "wb") as f:
                             f.write(project_export)
-                        log.debug(f"Import Success")
+                        log.debug("Import Success")
 
                 st.session_state["method"] = "API"
                 st.session_state["projects"] = read_dir(
