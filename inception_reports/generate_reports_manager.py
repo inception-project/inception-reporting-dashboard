@@ -284,6 +284,7 @@ def select_method_to_import_data():
         )
         button = st.sidebar.button("Generate Reports")
         if button:
+            st.session_state["projects_folder"] = projects_folder
             st.session_state["method"] = "Manually"
             st.session_state["projects"] = read_dir(projects_folder)
             button = False            
@@ -291,6 +292,7 @@ def select_method_to_import_data():
     elif method == "API":
         projects_folder = f"{os.path.expanduser('~')}/.inception_reports/projects"
         os.makedirs(os.path.dirname(projects_folder), exist_ok=True)
+        st.session_state["projects_folder"] = projects_folder
         api_url = st.sidebar.text_input("Enter API URL:", "")
         username = st.sidebar.text_input("Username:", "")
         password = st.sidebar.text_input("Password:", type="password", value="")
@@ -458,12 +460,11 @@ def export_data(project_data, output_directory=None):
         project_data (dict): The data to be exported.
     """
     current_date = datetime.now().strftime("%Y_%m_%d")
-    directory_name = f"exported_data_{current_date}"
 
     if output_directory is None:
-        output_directory = os.path.join(os.getcwd(), directory_name)
+        output_directory = os.path.join(os.getcwd(), "exported_project_data")
     else:
-        output_directory = os.path.join(output_directory, directory_name)
+        output_directory = os.path.join(output_directory, "exported_project_data")
 
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
@@ -738,7 +739,7 @@ def plot_project_progress(project) -> None:
     with col3:
         st.plotly_chart(bar_chart, use_container_width=True)
 
-    export_data(project_data)
+    export_data(project_data, st.session_state["projects_folder"])
 
 
 def main():
