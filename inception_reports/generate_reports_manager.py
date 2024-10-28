@@ -37,7 +37,7 @@ from pycaprio import Pycaprio
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state=st.session_state.setdefault("sidebar_state", "expanded"),
 )
 
