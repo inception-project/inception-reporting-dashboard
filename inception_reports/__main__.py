@@ -39,7 +39,7 @@ def setup_logging(log_level: str = None,log_dir: str = None):
 
         # Override log level and directory if provided
         log_level = log_level or os.getenv('INCEPTION_LOG_LEVEL', None)
-        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', '/var/log/inception')
+        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', 'inception_reports_logs')
 
         # Override log file path
         if not os.path.exists(log_dir):
