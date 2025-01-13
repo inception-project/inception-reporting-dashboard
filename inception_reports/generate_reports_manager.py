@@ -17,6 +17,7 @@
 from collections import defaultdict
 import copy
 import importlib.resources
+import io
 import json
 import os
 import shutil
@@ -506,6 +507,30 @@ def export_data(project_data):
     st.success(
         f"{project_name.split('.')[0]} documents status exported successfully to {output_directory} ✅"
     )
+
+
+def create_zip_download(reports):
+    """
+    Create a zip file containing all generated JSON reports and provide a download button.
+    """
+
+    if reports:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+            for report in reports:
+                file_name = f"{report['project_name'].split('.')[0]}_{report['created']}.json"
+                json_data = json.dumps(report, indent=4)
+                zip_file.writestr(file_name, json_data)
+
+        zip_buffer.seek(0)
+
+        st.download_button(
+            label="Download All Reports (ZIP)",
+            file_name="all_reports.zip",
+            mime="application/zip",
+            data=zip_buffer.getvalue(),
+        )
+
 
 
 def plot_project_progress(project) -> None:
