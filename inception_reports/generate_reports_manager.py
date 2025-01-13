@@ -808,11 +808,16 @@ def main():
     st.write("<hr>", unsafe_allow_html=True)
     select_method_to_import_data()
 
+    generated_reports = []
     if "method" in st.session_state and "projects" in st.session_state:
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
         projects = sorted(projects, key=lambda x: x["name"])
         for project in projects:
-            plot_project_progress(project)
+            project_data = plot_project_progress(project)
+            export_data(project_data)
+            generated_reports.append(project_data)
+        st.write("<hr>", unsafe_allow_html=True)
+        create_zip_download(generated_reports)
 
 
 if __name__ == "__main__":
