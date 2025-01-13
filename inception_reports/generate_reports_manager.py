@@ -88,8 +88,7 @@ def startup():
                 f"A new version ({latest_version}) of {package_name} is available. "
                 f"You are currently using version ({current_version}). Please update the package."
             )
-    
-    st.session_state["output_directory"] = os.getenv("INCEPTION_OUTPUT_DIR")
+
 
 
 def get_project_info():
@@ -479,7 +478,7 @@ def get_type_counts(annotations):
     return type_count
 
 
-def export_data(project_data, output_directory=None):
+def export_data(project_data):
     """
     Export project data to a JSON file, and store it in a directory named after the project and the current date.
 
@@ -488,7 +487,7 @@ def export_data(project_data, output_directory=None):
     """
     current_date = datetime.now().strftime("%Y_%m_%d")
 
-    output_directory = st.session_state.get("output_directory", None)
+    output_directory = os.getenv("INCEPTION_OUTPUT_DIR")
 
     if output_directory is None:
         output_directory = os.path.join(os.getcwd(), "exported_project_data")
@@ -766,7 +765,7 @@ def plot_project_progress(project) -> None:
     with col3:
         st.plotly_chart(bar_chart, use_container_width=True)
 
-    export_data(project_data, st.session_state["projects_folder"])
+    export_data(project_data)
 
 
 def main():
