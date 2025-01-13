@@ -282,13 +282,38 @@ def select_method_to_import_data():
         projects_folder = st.sidebar.text_input(
             "Projects Folder:", value=""
         )
+        uploaded_files = st.sidebar.file_uploader(
+            "Or upload project files:", accept_multiple_files=True, type="zip"
+        )
+
         button = st.sidebar.button("Generate Reports")
         if button:
-            st.session_state["projects_folder"] = projects_folder
+            if uploaded_files:
+                # Handle uploaded files
+                temp_dir = os.path.join(
+                    os.path.expanduser("~"), ".inception_reports", "temp_uploads"
+                )
+
+                os.makedirs(temp_dir, exist_ok=True)
+
+                for uploaded_file in uploaded_files:
+                    file_path = os.path.join(temp_dir, uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.read())
+
+                selected_projects_names = [uploaded_file.name.split(".")[0] for uploaded_file in uploaded_files]
+
+                st.session_state["projects"] = read_dir(temp_dir, selected_projects_names)
+                st.session_state["projects_folder"] = temp_dir
+                # shutil.rmtree(temp_dir)
+            elif projects_folder:
+                st.session_state["projects_folder"] = projects_folder
+                st.session_state["projects"] = read_dir(projects_folder)
+
             st.session_state["method"] = "Manually"
-            st.session_state["projects"] = read_dir(projects_folder)
             button = False            
             set_sidebar_state("collapsed")
+
     elif method == "API":
         projects_folder = f"{os.path.expanduser('~')}/.inception_reports/projects"
         os.makedirs(os.path.dirname(projects_folder), exist_ok=True)
@@ -478,7 +503,7 @@ def export_data(project_data, output_directory=None):
     ) as output_file:
         json.dump(project_data, output_file, indent=4)
     st.success(
-        f"{project_name.split('.')[0]} documents status exported successfully ✅"
+        f"{project_name.split('.')[0]} documents status exported successfully to {output_directory} ✅"
     )
 
 
