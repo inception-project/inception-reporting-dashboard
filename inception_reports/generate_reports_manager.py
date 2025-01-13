@@ -14,16 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections import defaultdict
 import copy
 import importlib.resources
+import io
 import json
+import logging
 import os
 import shutil
 import time
 import zipfile
+from collections import defaultdict
 from datetime import datetime
-import logging
 
 import cassis
 import pandas as pd
@@ -49,6 +50,7 @@ if st.session_state.get("flag"):
 
 
 log = logging.getLogger()
+
 
 def startup():
 
@@ -88,7 +90,6 @@ def startup():
                 f"A new version ({latest_version}) of {package_name} is available. "
                 f"You are currently using version ({current_version}). Please update the package."
             )
-
 
 
 def get_project_info():
@@ -208,7 +209,7 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                 folder_files = defaultdict(list)
                 for name in zip_file.namelist():
                     if name.startswith("annotation/") and name.endswith(".json"):
-                        folder = '/'.join(name.split('/')[:-1])
+                        folder = "/".join(name.split("/")[:-1])
                         folder_files[folder].append(name)
 
                 annotation_folders = []
@@ -217,7 +218,9 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                         annotation_folders.append(files[0])
                     else:
                         annotation_folders.extend(
-                            file for file in files if not file.endswith("INITIAL_CAS.json")
+                            file
+                            for file in files
+                            if not file.endswith("INITIAL_CAS.json")
                         )
                 for annotation_file in annotation_folders:
                     subfolder_name = os.path.dirname(annotation_file).split("/")[1]
@@ -259,7 +262,7 @@ def login_to_inception(api_url, username, password):
     if button:
         inception_client = Pycaprio(api_url, (username, password))
         try:
-            inception_client.api.projects()  # Check if login is successful
+            inception_client.api.projects()
             st.sidebar.success("Login successful ✅")
             return True, inception_client
         except Exception:
@@ -275,14 +278,12 @@ def select_method_to_import_data():
 
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=0
-    )    
+    )
     if method == "Manually":
         st.sidebar.write(
             "Please input the path to the folder containing the INCEpTION projects."
         )
-        projects_folder = st.sidebar.text_input(
-            "Projects Folder:", value=""
-        )
+        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
         uploaded_files = st.sidebar.file_uploader(
             "Or upload project files:", accept_multiple_files=True, type="zip"
         )
@@ -290,7 +291,6 @@ def select_method_to_import_data():
         button = st.sidebar.button("Generate Reports")
         if button:
             if uploaded_files:
-                # Handle uploaded files
                 temp_dir = os.path.join(
                     os.path.expanduser("~"), ".inception_reports", "temp_uploads"
                 )
@@ -302,17 +302,17 @@ def select_method_to_import_data():
                     with open(file_path, "wb") as f:
                         f.write(uploaded_file.read())
 
-                selected_projects_names = [uploaded_file.name.split(".")[0] for uploaded_file in uploaded_files]
+                selected_projects = [f.name.split(".")[0] for f in uploaded_files]
 
-                st.session_state["projects"] = read_dir(temp_dir, selected_projects_names)
+                st.session_state["projects"] = read_dir(temp_dir, selected_projects)
                 st.session_state["projects_folder"] = temp_dir
-                # shutil.rmtree(temp_dir)
+
             elif projects_folder:
                 st.session_state["projects_folder"] = projects_folder
                 st.session_state["projects"] = read_dir(projects_folder)
 
             st.session_state["method"] = "Manually"
-            button = False            
+            button = False
             set_sidebar_state("collapsed")
 
     elif method == "API":
@@ -356,7 +356,9 @@ def select_method_to_import_data():
                         selected_projects_names.append(project.project_name)
                         file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
-                        log.info(f"Importing project {project.project_name} into {file_path} ")
+                        log.info(
+                            f"Importing project {project.project_name} into {file_path} "
+                        )
                         project_export = inception_client.api.export_project(
                             project, "jsoncas"
                         )
@@ -386,6 +388,7 @@ def find_element_by_name(element_list, name):
         if element.name == name:
             return element.uiName
     return name.split(".")[-1]
+
 
 def get_type_counts(annotations):
     """
@@ -424,8 +427,7 @@ def get_type_counts(annotations):
         log.debug(f"Processing {doc_id}")
         # Get the list of relevant types for the current CAS object
         relevant_types = [
-            t for t in cas.typesystem.get_types()
-            if t.name not in excluded_types
+            t for t in cas.typesystem.get_types() if t.name not in excluded_types
         ]
 
         for t in relevant_types:
@@ -436,8 +438,10 @@ def get_type_counts(annotations):
 
             # Filter for the features that are relevant
             annotations_features = [
-                feature for feature in t.all_features
-                if feature.name not in {
+                feature
+                for feature in t.all_features
+                if feature.name
+                not in {
                     cassis.typesystem.FEATURE_BASE_NAME_END,
                     cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
                     cassis.typesystem.FEATURE_BASE_NAME_SOFA,
@@ -448,11 +452,7 @@ def get_type_counts(annotations):
             type_name = find_element_by_name(layer_definitions, t.name)
 
             if type_name not in type_count:
-                type_count[type_name] = {
-                    "total": 0,
-                    "documents": {},
-                    "features": {}
-                }
+                type_count[type_name] = {"total": 0, "documents": {}, "features": {}}
 
             type_count[type_name]["total"] += count
             type_count[type_name]["documents"].setdefault(doc_id, 0)
@@ -467,13 +467,22 @@ def get_type_counts(annotations):
                     if feature_value not in type_count[type_name]["features"]:
                         type_count[type_name]["features"][feature_value] = {}
 
-                    type_count[type_name]["features"][feature_value].setdefault(doc_id, 0)
+                    type_count[type_name]["features"][feature_value].setdefault(
+                        doc_id, 0
+                    )
                     type_count[type_name]["features"][feature_value][doc_id] += 1
 
-
     for type_name, type_data in type_count.items():
-        type_data["features"] = dict(sorted(type_data["features"].items(), key=lambda x: sum(x[1].values()), reverse=True))
-    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+        type_data["features"] = dict(
+            sorted(
+                type_data["features"].items(),
+                key=lambda x: sum(x[1].values()),
+                reverse=True,
+            )
+        )
+    type_count = dict(
+        sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True)
+    )
     log.debug(f"Type count object : {type_count}")
     return type_count
 
@@ -491,13 +500,11 @@ def export_data(project_data):
 
     if output_directory is None:
         output_directory = os.path.join(os.getcwd(), "exported_project_data")
-    
+
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
 
     project_name = project_data["project_name"]
-
-    project_data["created"] = datetime.now().date().isoformat()
 
     with open(
         f"{output_directory}/{project_name.split('.')[0]}_{current_date}.json", "w"
@@ -506,6 +513,29 @@ def export_data(project_data):
     st.success(
         f"{project_name.split('.')[0]} documents status exported successfully to {output_directory} ✅"
     )
+
+
+def create_zip_download(reports):
+    """
+    Create a zip file containing all generated JSON reports and provide a download button.
+    """
+
+    if reports:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+            for report in reports:
+                file_name = f"{report['project_name'].split('.')[0]}_{report['created']}.json"
+                json_data = json.dumps(report, indent=4)
+                zip_file.writestr(file_name, json_data)
+
+        zip_buffer.seek(0)
+
+        st.download_button(
+            label="Download All Reports (ZIP)",
+            file_name="all_reports.zip",
+            mime="application/zip",
+            data=zip_buffer.getvalue(),
+        )
 
 
 def plot_project_progress(project) -> None:
@@ -576,6 +606,7 @@ def plot_project_progress(project) -> None:
         "project_tags": project_tags,
         "doc_categories": doc_categories,
         "doc_token_categories": doc_token_categories,
+        "created": datetime.now().date().isoformat(),
     }
 
     data_sizes_docs = [
@@ -670,61 +701,60 @@ def plot_project_progress(project) -> None:
             }
         ],
     )
-    
+
     bar_chart = go.Figure()
 
     main_traces = 0
     feature_traces = 0
 
-    # Add bar traces for the total counts by category
     for category, details in type_counts.items():
-        bar_chart.add_trace(go.Bar(
-            y=[category],
-            x=[details["total"]],
-            text=[details["total"]],
-            textposition='auto',
-            name=category.capitalize(),
-            visible=True,
-            orientation="h",
-            hoverinfo="x+y"
-        ))
+        bar_chart.add_trace(
+            go.Bar(
+                y=[category],
+                x=[details["total"]],
+                text=[details["total"]],
+                textposition="auto",
+                name=category.capitalize(),
+                visible=True,
+                orientation="h",
+                hoverinfo="x+y",
+            )
+        )
         main_traces += 1
 
     feature_buttons = []
     for category, details in type_counts.items():
-        if len(details['features']) >= 2:
-            for subcategory, subvalues in details['features'].items():
-                bar_chart.add_trace(go.Bar(
-                    y=[subcategory],
-                    x=[sum(subvalues.values())],
-                    text=[sum(subvalues.values())],
-                    textposition='auto',
-                    name=subcategory,
-                    visible=False,
-                    orientation="h",
-                    hoverinfo="x+y"
-                ))
+        if len(details["features"]) >= 2:
+            for subcategory, subvalues in details["features"].items():
+                bar_chart.add_trace(
+                    go.Bar(
+                        y=[subcategory],
+                        x=[sum(subvalues.values())],
+                        text=[sum(subvalues.values())],
+                        textposition="auto",
+                        name=subcategory,
+                        visible=False,
+                        orientation="h",
+                        hoverinfo="x+y",
+                    )
+                )
                 feature_traces += 1
-            
+
             visibility = [False] * main_traces + [True] * feature_traces
-            
+
             feature_buttons.append(
                 {
-                    "args": [
-                        {"visible": visibility}
-                    ],
+                    "args": [{"visible": visibility}],
                     "label": category,
-                    "method": "update"
+                    "method": "update",
                 }
             )
 
     bar_chart_buttons = [
         {
-            "args": [
-                {"visible": [True] * main_traces + [False] * feature_traces}
-            ],
+            "args": [{"visible": [True] * main_traces + [False] * feature_traces}],
             "label": "Overview",
-            "method": "update"
+            "method": "update",
         }
     ] + feature_buttons
 
@@ -738,7 +768,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height= min(160 * len(type_counts), 500),
+        height=min(160 * len(type_counts), 500),
         font=dict(size=18),
         legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -767,7 +797,7 @@ def plot_project_progress(project) -> None:
     with col3:
         st.plotly_chart(bar_chart, use_container_width=True)
 
-    export_data(project_data)
+    return project_data
 
 
 def main():
@@ -783,11 +813,16 @@ def main():
     st.write("<hr>", unsafe_allow_html=True)
     select_method_to_import_data()
 
+    generated_reports = []
     if "method" in st.session_state and "projects" in st.session_state:
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
         projects = sorted(projects, key=lambda x: x["name"])
         for project in projects:
-            plot_project_progress(project)
+            project_data = plot_project_progress(project)
+            export_data(project_data)
+            generated_reports.append(project_data)
+        st.write("<hr>", unsafe_allow_html=True)
+        create_zip_download(generated_reports)
 
 
 if __name__ == "__main__":
