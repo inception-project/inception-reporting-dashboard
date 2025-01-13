@@ -23,28 +23,33 @@ import logging.config
 import yaml
 import importlib
 
-def setup_logging(log_level: str = None,log_dir: str = None):
+
+def setup_logging(log_level: str = None, log_dir: str = None):
     """
     Sets up logging configuration.
 
     Args:
         log_level: The desired log level (e.g., "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
         log_dir: The directory where log files will be stored.
-    """        
+    """
     # Use importlib.resources to access logging_config.yaml
-    with importlib.resources.path('inception_reports.config', 'logging_config.yaml') as config_path:
+    with importlib.resources.path(
+        "inception_reports.config", "logging_config.yaml"
+    ) as config_path:
         # Read logging configuration from YAML file
-        with open(config_path, 'r') as file:
+        with open(config_path, "r") as file:
             logging_config = yaml.safe_load(file)
 
         # Override log level and directory if provided
-        log_level = log_level or os.getenv('INCEPTION_LOG_LEVEL', None)
-        log_dir = log_dir or os.getenv('INCEPTION_LOG_DIR', 'inception_reports_logs')
+        log_level = log_level or os.getenv("INCEPTION_LOG_LEVEL", None)
+        log_dir = log_dir or os.getenv("INCEPTION_LOG_DIR", "inception_reports_logs")
 
         # Override log file path
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        logging_config['handlers']['file']['filename'] = os.path.join(log_dir, 'app.log')
+        logging_config["handlers"]["file"]["filename"] = os.path.join(
+            log_dir, "app.log"
+        )
 
         # Apply logging configuration
         logging.config.dictConfig(logging_config)
@@ -54,21 +59,42 @@ def setup_logging(log_level: str = None,log_dir: str = None):
             logger = logging.getLogger()  # Root logger
             logger.setLevel(log_level.upper())
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate plots for your INCEpTION project."
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "-m", "--manager", help="You are managing a single project, or a single location.", action="store_true"
+        "-m",
+        "--manager",
+        help="You are managing a single project, or a single location.",
+        action="store_true",
     )
-    group.add_argument("-l", "--lead", help="You are leading multiple projects, or multiple locations.", action="store_true")
-    
-    parser.add_argument('--logger',choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],help='Set the logging level')
+    group.add_argument(
+        "-l",
+        "--lead",
+        help="You are leading multiple projects, or multiple locations.",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "-o", "--output", help="Output directory for the generated plots.", required=False
+    )
+
+    parser.add_argument(
+        "--logger",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level",
+    )
     args = parser.parse_args()
 
     setup_logging(args.logger)
     log = logging.getLogger(__name__)
+
+    if args.output:
+        os.environ["INCEPTION_OUTPUT_DIR"] = args.output
+        print(f"Output directory set to: {args.output}")
 
     if args.manager:
         log.info("STARTING INCEpTION Reporting Dashboard - Manager")
