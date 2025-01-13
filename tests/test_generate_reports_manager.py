@@ -92,9 +92,11 @@ def test_export_data(tmpdir):
 
     current_date = datetime.now().strftime("%Y_%m_%d")
     output_directory = tmpdir.mkdir("output")
-    export_data(project_data, output_directory)
+    os.environ["INCEPTION_OUTPUT_DIR"] = str(output_directory)
+    export_data(project_data)
 
-    expected_file_path = os.path.join(output_directory, f"exported_project_data/{project_data['project_name']}_{current_date}.json")
+    expected_file_path = os.path.join(output_directory, f"{project_data['project_name']}_{current_date}.json")
+    print(expected_file_path)
     assert os.path.exists(expected_file_path)
 
     with open(expected_file_path, "r") as output_file:

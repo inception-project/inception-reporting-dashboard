@@ -90,6 +90,7 @@ def startup():
             )
 
 
+
 def get_project_info():
     try:
         pyproject_path = os.path.join(os.path.dirname(__file__), "..", "pyproject.toml")
@@ -477,7 +478,7 @@ def get_type_counts(annotations):
     return type_count
 
 
-def export_data(project_data, output_directory=None):
+def export_data(project_data):
     """
     Export project data to a JSON file, and store it in a directory named after the project and the current date.
 
@@ -486,11 +487,11 @@ def export_data(project_data, output_directory=None):
     """
     current_date = datetime.now().strftime("%Y_%m_%d")
 
+    output_directory = os.getenv("INCEPTION_OUTPUT_DIR")
+
     if output_directory is None:
         output_directory = os.path.join(os.getcwd(), "exported_project_data")
-    else:
-        output_directory = os.path.join(output_directory, "exported_project_data")
-
+    
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
 
@@ -764,7 +765,7 @@ def plot_project_progress(project) -> None:
     with col3:
         st.plotly_chart(bar_chart, use_container_width=True)
 
-    export_data(project_data, st.session_state["projects_folder"])
+    export_data(project_data)
 
 
 def main():
