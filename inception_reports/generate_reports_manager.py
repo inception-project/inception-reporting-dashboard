@@ -616,7 +616,8 @@ def plot_project_progress(project) -> None:
             values=df_pie_docs["Sizes"],
             sort=False,
             hole=0.4,
-            hoverinfo="label+value",
+            hoverinfo="percent+label",
+            textinfo="value",
         )
     )
     pie_chart.add_trace(
@@ -625,7 +626,8 @@ def plot_project_progress(project) -> None:
             values=df_pie_tokens["Sizes"],
             sort=False,
             hole=0.4,
-            hoverinfo="label+value",
+            hoverinfo="percent+label",
+            textinfo="value",
             visible=False,
         )
     )
