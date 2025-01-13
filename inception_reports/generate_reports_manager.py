@@ -88,6 +88,8 @@ def startup():
                 f"A new version ({latest_version}) of {package_name} is available. "
                 f"You are currently using version ({current_version}). Please update the package."
             )
+    
+    st.session_state["output_directory"] = os.getenv("INCEPTION_OUTPUT_DIR")
 
 
 def get_project_info():
@@ -486,11 +488,11 @@ def export_data(project_data, output_directory=None):
     """
     current_date = datetime.now().strftime("%Y_%m_%d")
 
+    output_directory = st.session_state.get("output_directory", None)
+
     if output_directory is None:
         output_directory = os.path.join(os.getcwd(), "exported_project_data")
-    else:
-        output_directory = os.path.join(output_directory, "exported_project_data")
-
+    
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
 
