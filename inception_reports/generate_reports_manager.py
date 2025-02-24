@@ -739,12 +739,12 @@ def plot_project_progress(project) -> None:
     feature_buttons = []
     for category, details in type_counts.items():
         if len(details["features"]) >= 2:
-            for subcategory, subvalues in details["features"].items():
+            for subcategory, value in details["features"].items():
                 bar_chart.add_trace(
                     go.Bar(
                         y=[subcategory],
-                        x=[sum(subvalues.values())],
-                        text=[sum(subvalues.values())],
+                        x=[value],
+                        text=[value],
                         textposition="auto",
                         name=subcategory,
                         visible=False,
