@@ -483,6 +483,14 @@ def get_type_counts(annotations):
     type_count = dict(
         sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True)
     )
+
+    for category, details in type_count.items():
+        if len(details["features"]) >= 2:
+            type_count[category] = {"total": details["total"], "features": {}}
+            for subcategory, subvalues in details["features"].items():
+                type_count[category]["features"][subcategory] = sum(subvalues.values())
+
+
     log.debug(f"Type count object : {type_count}")
     return type_count
 
@@ -597,15 +605,14 @@ def plot_project_progress(project) -> None:
         log.debug(f"Start processing tokens for document {doc}")
         state = doc["state"]
         if state in doc_token_categories:
-            doc_token_categories[state] += type_counts["Token"]["documents"][
-                doc["name"]
-            ]
+            doc_token_categories[state] += type_counts["Token"]["documents"][doc["name"]]
 
     project_data = {
         "project_name": project_name,
         "project_tags": project_tags,
         "doc_categories": doc_categories,
         "doc_token_categories": doc_token_categories,
+        "type_counts": type_counts, 
         "created": datetime.now().date().isoformat(),
     }
 
