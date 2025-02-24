@@ -607,12 +607,19 @@ def plot_project_progress(project) -> None:
         if state in doc_token_categories:
             doc_token_categories[state] += type_counts["Token"]["documents"][doc["name"]]
 
+    output_type_counts = {}
+    for category, details in type_counts.items():
+        output_type_counts[category] = {"total": details["total"]}
+        if category == "PHI":
+            output_type_counts[category]["features"] = details["features"]
+
+
     project_data = {
         "project_name": project_name,
         "project_tags": project_tags,
         "doc_categories": doc_categories,
         "doc_token_categories": doc_token_categories,
-        "type_counts": type_counts, 
+        "type_counts": output_type_counts, 
         "created": datetime.now().date().isoformat(),
     }
 
