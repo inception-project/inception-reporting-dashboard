@@ -485,6 +485,9 @@ def get_type_counts(annotations):
     )
 
     for category, details in type_count.items():
+        if category == "PHI":
+            # Keep detailed per-document breakdown for PHI
+            continue
         if len(details["features"]) >= 2:
             type_count[category] = {"total": details["total"], "features": {}}
             for subcategory, subvalues in details["features"].items():
@@ -608,10 +611,25 @@ def plot_project_progress(project) -> None:
             doc_token_categories[state] += type_counts["Token"]["documents"][doc["name"]]
 
     output_type_counts = {}
+    doc_states = {doc["name"]: doc["state"] for doc in project_documents}
+
     for category, details in type_counts.items():
         output_type_counts[category] = {"total": details["total"]}
+        
         if category == "PHI":
-            output_type_counts[category]["features"] = details["features"]
+            feature_state_breakdown = defaultdict(lambda: defaultdict(int))
+            
+            for feature_value, doc_counts in details["features"].items():
+                for doc_name, count in doc_counts.items():
+                    state = doc_states.get(doc_name, "UNKNOWN")
+                    feature_state_breakdown[feature_value][state] += count
+
+            # Convert to regular dict for export
+            output_type_counts[category]["features"] = {
+                feature: dict(state_counts)
+                for feature, state_counts in feature_state_breakdown.items()
+            }
+
 
 
     project_data = {
