@@ -772,7 +772,8 @@ def plot_project_progress(project) -> None:
     bar_chart = go.Figure()
 
     main_traces = 0
-    feature_traces = 0
+    total_feature_traces = 0
+    category_trace_mapping = {}
 
     for category, details in type_counts.items():
         bar_chart.add_trace(
@@ -792,12 +793,19 @@ def plot_project_progress(project) -> None:
     feature_buttons = []
     for category, details in type_counts.items():
         if len(details["features"]) >= 2:
+            category_start = total_feature_traces
             for subcategory, value in details["features"].items():
+                # For PHI, value is a dict with per-document counts, for others it's a total
+                if isinstance(value, dict):
+                    total_value = sum(value.values())
+                else:
+                    total_value = value
+                
                 bar_chart.add_trace(
                     go.Bar(
                         y=[subcategory],
-                        x=[value],
-                        text=[value],
+                        x=[total_value],
+                        text=[total_value],
                         textposition="auto",
                         name=subcategory,
                         visible=False,
@@ -805,9 +813,15 @@ def plot_project_progress(project) -> None:
                         hoverinfo="x+y",
                     )
                 )
-                feature_traces += 1
+                total_feature_traces += 1
+            
+            category_end = total_feature_traces
+            category_trace_mapping[category] = (category_start, category_end)
 
-            visibility = [False] * main_traces + [True] * feature_traces
+            # Create visibility array: hide main traces, show only this category's feature traces
+            visibility = [False] * main_traces + [False] * total_feature_traces
+            for i in range(category_start, category_end):
+                visibility[main_traces + i] = True
 
             feature_buttons.append(
                 {
@@ -819,7 +833,7 @@ def plot_project_progress(project) -> None:
 
     bar_chart_buttons = [
         {
-            "args": [{"visible": [True] * main_traces + [False] * feature_traces}],
+            "args": [{"visible": [True] * main_traces + [False] * total_feature_traces}],
             "label": "Overview",
             "method": "update",
         }
