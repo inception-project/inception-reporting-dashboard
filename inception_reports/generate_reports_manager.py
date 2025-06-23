@@ -20,7 +20,6 @@ import io
 import json
 import logging
 import os
-import shutil
 import time
 import zipfile
 from collections import defaultdict
@@ -179,15 +178,13 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
             continue
         file_path = os.path.join(dir_path, file_name)
         if zipfile.is_zipfile(file_path):
-            with zipfile.ZipFile(file_path, "r") as zip_file:
-                zip_path = f"{dir_path}/{file_name.split('.')[0]}"
-                zip_file.extractall(path=zip_path)
-
-                # Find project metadata file
-                project_meta_path = os.path.join(zip_path, "exportedproject.json")
-                if os.path.exists(project_meta_path):
-                    with open(project_meta_path, "r") as project_meta_file:
-                        project_meta = json.load(project_meta_file)
+            try:
+                with zipfile.ZipFile(file_path, "r") as zip_file:
+                    # Read project metadata directly from ZIP without extracting
+                    try:
+                        project_meta_data = zip_file.read("exportedproject.json")
+                        project_meta = json.loads(project_meta_data.decode('utf-8'))
+                        
                         description = project_meta.get("description", "")
                         project_tags = (
                             [
@@ -201,44 +198,67 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
 
                         project_documents = project_meta.get("source_documents")
                         if not project_documents:
-                            raise ValueError(
-                                "No source documents found in the project."
-                            )
+                            log.warning(f"No source documents found in project {file_name}")
+                            continue
+                    except KeyError:
+                        log.warning(f"No exportedproject.json found in {file_name}")
+                        continue
 
-                annotations = {}
-                folder_files = defaultdict(list)
-                for name in zip_file.namelist():
-                    if name.startswith("annotation/") and name.endswith(".json"):
+                    # Process annotations directly from ZIP with better performance
+                    annotations = {}
+                    
+                    # Get annotation files more efficiently
+                    annotation_files = []
+                    try:
+                        for info in zip_file.infolist():
+                            if (info.filename.startswith("annotation/") and 
+                                info.filename.endswith(".json") and
+                                not info.is_dir()):
+                                annotation_files.append(info.filename)
+                    except Exception as e:
+                        log.warning(f"Error reading ZIP file list for {file_name}: {e}")
+                        continue
+                    
+                    # Group files by folder efficiently
+                    folder_files = defaultdict(list)
+                    for name in annotation_files:
                         folder = "/".join(name.split("/")[:-1])
                         folder_files[folder].append(name)
 
-                annotation_folders = []
-                for folder, files in folder_files.items():
-                    if len(files) == 1 and files[0].endswith("INITIAL_CAS.json"):
-                        annotation_folders.append(files[0])
-                    else:
-                        annotation_folders.extend(
-                            file
-                            for file in files
-                            if not file.endswith("INITIAL_CAS.json")
-                        )
-                for annotation_file in annotation_folders:
-                    subfolder_name = os.path.dirname(annotation_file).split("/")[1]
-                    with zip_file.open(annotation_file) as cas_file:
-                        cas = cassis.load_cas_from_json(cas_file)
-                        annotations[subfolder_name] = cas
+                    # Select appropriate annotation files
+                    selected_annotation_files = []
+                    for folder, files in folder_files.items():
+                        if len(files) == 1 and files[0].endswith("INITIAL_CAS.json"):
+                            selected_annotation_files.append(files[0])
+                        else:
+                            selected_annotation_files.extend(
+                                file for file in files
+                                if not file.endswith("INITIAL_CAS.json")
+                            )
+                    
+                    for annotation_file in selected_annotation_files:
+                        try:
+                            subfolder_name = os.path.dirname(annotation_file).split("/")[1]
+                            with zip_file.open(annotation_file) as cas_file:
+                                cas = cassis.load_cas_from_json(cas_file)
+                                annotations[subfolder_name] = cas
+                                    
+                        except Exception as e:
+                            log.warning(f"Failed to load annotation file {annotation_file} from {file_name}: {e}")
+                            continue
 
-                projects.append(
-                    {
-                        "name": file_name,
-                        "tags": project_tags if project_tags else None,
-                        "documents": project_documents,
-                        "annotations": annotations,
-                    }
-                )
-
-                # Clean up extracted files
-                shutil.rmtree(zip_path)
+                    projects.append(
+                        {
+                            "name": file_name,
+                            "tags": project_tags if project_tags else None,
+                            "documents": project_documents,
+                            "annotations": annotations,
+                        }
+                    )
+                    
+            except Exception as e:
+                log.error(f"Error processing project file {file_name}: {e}")
+                continue
 
     return projects
 
@@ -836,6 +856,7 @@ def plot_project_progress(project) -> None:
         st.plotly_chart(bar_chart, use_container_width=True)
 
     return project_data
+
 
 
 def main():
