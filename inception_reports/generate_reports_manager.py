@@ -640,7 +640,16 @@ def plot_project_progress(project) -> None:
     doc_states = {doc["name"]: doc["state"] for doc in project_documents}
 
     for category, details in type_counts.items():
-        output_type_counts[category] = {"total": details["total"]}
+        # Calculate total count split by document status
+        total_by_status = defaultdict(int)
+        for doc_name, count in details["documents"].items():
+            state = doc_states.get(doc_name, "UNKNOWN")
+            total_by_status[state] += count
+        
+        output_type_counts[category] = {
+            "total": details["total"],
+            "total_by_status": dict(total_by_status)
+        }
         
         if category == "PHI":
             feature_state_breakdown = defaultdict(lambda: defaultdict(int))
