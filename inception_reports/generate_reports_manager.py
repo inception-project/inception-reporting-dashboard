@@ -85,11 +85,12 @@ def startup():
     if project_info:
         current_version, package_name = project_info
         latest_version = check_package_version(current_version, package_name)
-        if latest_version:
-            st.sidebar.warning(
-                f"A new version ({latest_version}) of {package_name} is available. "
-                f"You are currently using version ({current_version}). Please update the package."
-            )
+        version_message = f"Dashboard Version: {current_version}"
+        
+        if latest_version and pkg_resources.parse_version(current_version) < pkg_resources.parse_version(latest_version):
+            st.sidebar.warning(f"{version_message} (Update available: {latest_version})")
+        else:
+            st.sidebar.info(version_message)
 
 
 def get_project_info():
@@ -475,6 +476,8 @@ def find_element_by_name(element_list, name):
     Returns:
         str: The UI name of the found element, or the last part of the name if not found.
     """
+    # if "gemtex" in name:
+        # return name
     for element in element_list:
         if element.name == name:
             return element.uiName
