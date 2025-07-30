@@ -20,6 +20,7 @@ import io
 import json
 import logging
 import os
+import re
 import time
 import zipfile
 from collections import defaultdict
@@ -169,6 +170,65 @@ def translate_tag(tag, translation_path=None):
         else:
             return tag
 
+def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> dict:
+    """
+    Efficiently extract required SNOMED concept labels from TTL files inside a ZIP.
+    Returns only the text inside parentheses (e.g., "attribute" from 'Foo Bar (attribute)').
+
+    Args:
+        zip_file (ZipFile): Open ZipFile object (INCEpTION project).
+        required_ids (set): Set of SNOMED concept URIs to extract.
+        lang (str): Language tag to filter (default: 'en').
+
+    Returns:
+        dict: Mapping of SNOMED concept URI -> label content in parentheses.
+    """
+    label_map = {}
+
+    subject_pattern = re.compile(r'^<\s*(http://snomed\.info/id/\d+)\s*>')
+    label_patterns = [
+        re.compile(r'rdfs:label\s+"(.+?)"\s*@' + re.escape(lang)),
+        re.compile(r'skos:prefLabel\s+"(.+?)"\s*@' + re.escape(lang)),
+    ]
+    paren_pattern = re.compile(r'\(([^)]+)\)')  # matches text inside ( )
+
+    for info in zip_file.infolist():
+        if info.filename.startswith("kb/") and info.filename.endswith(".ttl"):
+            try:
+                with zip_file.open(info.filename) as ttl_file:
+                    current_uri = None
+                    collecting = False
+                    block_lines = []
+
+                    for line in io.TextIOWrapper(ttl_file, encoding="utf-8"):
+                        stripped = line.strip()
+
+                        subject_match = subject_pattern.match(stripped)
+                        if subject_match:
+                            current_uri = subject_match.group(1)
+                            collecting = current_uri in required_ids
+                            block_lines = [stripped]
+                            continue
+
+                        if collecting:
+                            block_lines.append(stripped)
+
+                            if stripped.endswith('.'):
+                                full_block = ' '.join(block_lines)
+                                for pat in label_patterns:
+                                    match = pat.search(full_block)
+                                    if match:
+                                        full_label = match.group(1)
+                                        paren_match = paren_pattern.search(full_label)
+                                        if paren_match:
+                                            label_map[current_uri] = paren_match.group(1)
+                                        break
+                                collecting = False
+            except Exception as e:
+                log.warning(f"Error parsing TTL file {info.filename}: {e}")
+    return label_map
+
+
 
 def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
     projects = []
@@ -204,9 +264,9 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                         log.warning(f"No exportedproject.json found in {file_name}")
                         continue
 
+                    used_snomed_ids = set()
                     # Process annotations directly from ZIP with better performance
                     annotations = {}
-                    
                     # Get annotation files more efficiently
                     annotation_files = []
                     try:
@@ -242,10 +302,20 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                             with zip_file.open(annotation_file) as cas_file:
                                 cas = cassis.load_cas_from_json(cas_file)
                                 annotations[subfolder_name] = cas
+
+                                # Extract SNOMED concept IDs from the annotations
+                                if "gemtex.Concept" in [t.name for t in cas.typesystem.get_types()]:
+                                    for concept in cas.select("gemtex.Concept"):
+                                        concept_id = concept.get("id")
+                                        if concept_id:
+                                            used_snomed_ids.add(concept_id)
                                     
                         except Exception as e:
                             log.warning(f"Failed to load annotation file {annotation_file} from {file_name}: {e}")
                             continue
+
+                    snomed_label_map = extract_required_snomed_labels(zip_file, used_snomed_ids)
+
 
                     projects.append(
                         {
@@ -253,6 +323,7 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                             "tags": project_tags if project_tags else None,
                             "documents": project_documents,
                             "annotations": annotations,
+                            "snomed_labels": snomed_label_map,
                         }
                     )
                     
@@ -410,7 +481,7 @@ def find_element_by_name(element_list, name):
     return name.split(".")[-1]
 
 
-def get_type_counts(annotations):
+def get_type_counts(annotations, snomed_labels=None):
     """
     Calculate the count of each type in the given annotations. Each annotation is a CAS object.
 
@@ -440,6 +511,7 @@ def get_type_counts(annotations):
         "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData",
         "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagDescription",
         "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagsetDescription",
+        "gemtex.Relation",
         None,
     }
 
@@ -465,6 +537,7 @@ def get_type_counts(annotations):
                     cassis.typesystem.FEATURE_BASE_NAME_END,
                     cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
                     cassis.typesystem.FEATURE_BASE_NAME_SOFA,
+                    "literal"
                 }
             ]
 
@@ -484,6 +557,8 @@ def get_type_counts(annotations):
                     feature_value = cas_item.get(feature.name)
                     if feature_value is None:
                         continue
+                    if t.name == "gemtex.Concept" and feature.name == "id":
+                        feature_value = snomed_labels.get(feature_value, "NONE")
                     if feature_value not in type_count[type_name]["features"]:
                         type_count[type_name]["features"][feature_value] = {}
 
@@ -505,16 +580,17 @@ def get_type_counts(annotations):
     )
 
     for category, details in type_count.items():
-        if category == "PHI":
+        if category in ["PHI", "Concept"]:
+            print(f"Skipping {category} category")
             # Keep detailed per-document breakdown for PHI
             continue
         if len(details["features"]) >= 2:
-            type_count[category] = {"total": details["total"], "features": {}}
+            type_count[category] = {"total": details["total"], "documents": details["documents"], "features": {}}
             for subcategory, subvalues in details["features"].items():
                 type_count[category]["features"][subcategory] = sum(subvalues.values())
 
 
-    log.debug(f"Type count object : {type_count}")
+    log.debug(f"Type counts object : {type_count}")
     return type_count
 
 
@@ -596,7 +672,7 @@ def plot_project_progress(project) -> None:
     project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
-    type_counts = get_type_counts(project_annotations)
+    type_counts = get_type_counts(project_annotations, project.get("snomed_labels", {}))
 
     if project_tags:
         st.write(
@@ -650,8 +726,8 @@ def plot_project_progress(project) -> None:
             "total": details["total"],
             "total_by_status": dict(total_by_status)
         }
-        
-        if category == "PHI":
+
+        if category in ["PHI", "Concept"]:
             feature_state_breakdown = defaultdict(lambda: defaultdict(int))
             
             for feature_value, doc_counts in details["features"].items():
