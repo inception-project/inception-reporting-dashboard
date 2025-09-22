@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 import zipfile
 from collections import defaultdict
@@ -170,6 +171,47 @@ def translate_tag(tag, translation_path=None):
             return document_types[tag]
         else:
             return tag
+        
+def ensure_default_config():
+    """
+    Ensure excluded_types.json exists in ~/.inception_reports.
+    If not, copy the packaged default there.
+    """
+    home_dir = os.path.expanduser("~")
+    config_dir = os.path.join(home_dir, ".inception_reports")
+    os.makedirs(config_dir, exist_ok=True)
+
+    user_config = os.path.join(config_dir, "excluded_types.json")
+
+    if not os.path.exists(user_config):
+        try:
+            with importlib.resources.path("inception_reports.data", "excluded_types.json") as default_path:
+                shutil.copy(default_path, user_config)
+                log.info(f"Copied default excluded_types.json to {user_config}")
+        except Exception as e:
+            log.error(f"Failed to copy default excluded_types.json: {e}")
+
+    return user_config
+
+        
+def load_excluded_types():
+    """
+    Always load excluded types from ~/.inception_reports/excluded_types.json.
+    Ensures the file exists by copying the packaged default if necessary.
+    """
+    config_path = ensure_default_config()
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        excluded = set(config.get("excluded_types", []))
+        # excluded.add(None)  # handle None explicitly
+        return excluded
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning(f"Could not read excluded_types.json: {e}")
+        return set()
+
+
 
 def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> dict:
     """
@@ -504,19 +546,8 @@ def get_type_counts(annotations, snomed_labels=None):
         "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
     )
 
-    # Define a set of types to exclude for clarity and performance
-    excluded_types = {
-        "uima.tcas.DocumentAnnotation",
-        "webanno.custom.Metadata",
-        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition",
-        "de.tudarmstadt.ukp.clarin.webanno.api.type.FeatureDefinition",
-        "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.morph.MorphologicalFeatures",
-        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData",
-        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagDescription",
-        "de.tudarmstadt.ukp.dkpro.core.api.metadata.type.TagsetDescription",
-        "gemtex.Relation",
-        None,
-    }
+    # Load the excluded types from config
+    excluded_types = load_excluded_types()
 
     for doc_id, cas in annotations.items():
         log.debug(f"Processing {doc_id}")
