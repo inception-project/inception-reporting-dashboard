@@ -1,20 +1,53 @@
 # INCEpTION Reporting Dashboard
 
-This package will generate plots to track the progress of your INCEpTION project(s).
+The INCEpTION Reporting Dashboard helps you track and visualize the progress of your INCEpTION project(s). It provides tools for project managers and leads to monitor metrics, analyze annotations, and export progress reports.
 
-In its current state, it can be used by the project manager on site to visualize different metrics regarding the progress of the project, and the type of annotations done.
+## Features
 
-In case the project is part of a bigger project, the project progress can be exported to be sent to a project lead in a centralized location who, in turn, can use the package to get an overview of the progress across the different projects and locations.
+- Visualize project metrics and annotation types.
+- Export progress reports for centralized tracking.
+- Browser-based interface for ease of use.
 
-## Getting started
+## Getting Started
 
-1. Ensure you have python 3.11 or higher (check it using python --version)
-2. Install the package using ``pip install -U inception-reports``
-3. Run the script using ``inception_reports --help`` this will show you the options you have:
-    1. Run it with ``inception_reports --manager`` if you have one python project, or are responsible for one location.
-    2. Run it with ``inception_reports --lead`` if you're leading multiple projects, or multiple locations.
-4. Regardless of the mode you run the package with, it should open a browser window. Follow the instructions on the page to proceed.
+1. **Check Python Version**: Ensure you have Python 3.11 or higher installed. You can verify this by running:
 
-## Issues
+   ```bash
+   python --version
+   ```
 
-This package is under early development, if you notice any bugs, or face any issues, do not hesitate to open a [Github issue](https://github.com/inception-project/inception-reporting-dashboard/issues).
+2. **Install the Package**: Install the package using pip:
+
+   ```bash
+   pip install -U inception-reports
+   ```
+
+3. **Run the Application**:
+
+   - For managing a single project or location, use:
+
+     ```bash
+     inception_reports --manager
+     ```
+
+   - For tracking the status of multiple projects, use:
+
+     ```bash
+     inception_reports --lead
+     ```
+
+4. **Follow the Instructions**: The application will open a browser window. Follow the on-screen instructions to proceed.
+
+## Notes on Customization
+
+This package has been developed with [GeMTeX](https://www.medizininformatik-initiative.de/en/gemtex-automated-indexing-medical-texts-research) in mind, and certain configurations, such as `excluded_types.json` in the `inception_reports` home directory, are tailored to its requirements. Users are encouraged to adjust these configurations to suit the specific needs of their projects.
+
+## Issues and Contributions
+
+This package is under active development. If you encounter any bugs or issues, please open a [GitHub issue](https://github.com/inception-project/inception-reporting-dashboard/issues).
+
+We welcome contributions! For details on how to contribute, see our [Contributing Guidelines](CONTRIBUTORS.txt).
+
+## License
+
+This project is licensed under the terms of the [LICENSE](LICENSE) file.
