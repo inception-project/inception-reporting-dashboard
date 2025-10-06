@@ -213,68 +213,6 @@ def load_excluded_types():
         log.warning(f"Could not read excluded_types.json: {e}")
         return set()
 
-
-
-def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> dict:
-    """
-    Efficiently extract required SNOMED concept labels from TTL files inside a ZIP.
-    Returns only the text inside the LAST parentheses.
-
-    Args:
-        zip_file (ZipFile): Open ZipFile object (INCEpTION project).
-        required_ids (set): Set of SNOMED concept URIs to extract.
-        lang (str): Language tag to filter (default: 'en').
-
-    Returns:
-        dict: Mapping of SNOMED concept URI -> label content in parentheses.
-    """
-    label_map = {}
-
-    subject_pattern = re.compile(r'^<\s*(http://snomed\.info/id/\d+)\s*>')
-    label_patterns = [
-        re.compile(r'rdfs:label\s+"(.+?)"\s*@' + re.escape(lang)),
-        re.compile(r'skos:prefLabel\s+"(.+?)"\s*@' + re.escape(lang)),
-    ]
-
-    paren_pattern = re.compile(r'\(([^)]+)\)')
-
-    for info in zip_file.infolist():
-        if info.filename.startswith("kb/") and info.filename.endswith(".ttl"):
-            try:
-                with zip_file.open(info.filename) as ttl_file:
-                    current_uri = None
-                    collecting = False
-                    block_lines = []
-
-                    for line in io.TextIOWrapper(ttl_file, encoding="utf-8"):
-                        stripped = line.strip()
-
-                        subject_match = subject_pattern.match(stripped)
-                        if subject_match:
-                            current_uri = subject_match.group(1)
-                            collecting = current_uri in required_ids
-                            block_lines = [stripped]
-                            continue
-
-                        if collecting:
-                            block_lines.append(stripped)
-
-                            if stripped.endswith('.'):
-                                full_block = ' '.join(block_lines)
-                                for pat in label_patterns:
-                                    match = pat.search(full_block)
-                                    if match:
-                                        full_label = match.group(1)
-                                        paren_matches = paren_pattern.findall(full_label)
-                                        if paren_matches:
-                                            label_map[current_uri] = paren_matches[-1]
-                                        break
-                                collecting = False
-            except Exception as e:
-                log.warning(f"Error parsing TTL file {info.filename}: {e}")
-    return label_map
-
-
 def batched(iterable, n):
     """Yield successive n-sized batches from iterable."""
     it = iter(iterable)
