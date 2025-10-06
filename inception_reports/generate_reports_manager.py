@@ -26,6 +26,7 @@ import time
 import zipfile
 from collections import defaultdict
 from datetime import datetime
+from itertools import islice
 
 import cassis
 import pandas as pd
@@ -36,6 +37,7 @@ import requests
 import streamlit as st
 import toml
 from pycaprio import Pycaprio
+from rdflib.plugins.stores.sparqlstore import SPARQLStore
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -211,73 +213,125 @@ def load_excluded_types():
         log.warning(f"Could not read excluded_types.json: {e}")
         return set()
 
+def batched(iterable, n):
+    """Yield successive n-sized batches from iterable."""
+    it = iter(iterable)
+    while batch := list(islice(it, n)):
+        yield batch
 
-
-def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> dict:
+def get_snomed_semantic_tag_map(
+    base_url: str,
+    project_id: int,
+    kb_id: str,
+    snomed_ids: set,
+    auth: tuple = None,
+    batch_size: int = 50,
+) -> dict:
     """
-    Efficiently extract required SNOMED concept labels from TTL files inside a ZIP.
-    Returns only the text inside parentheses (e.g., "attribute" from 'Foo Bar (attribute)').
-
-    Args:
-        zip_file (ZipFile): Open ZipFile object (INCEpTION project).
-        required_ids (set): Set of SNOMED concept URIs to extract.
-        lang (str): Language tag to filter (default: 'en').
+    Query the INCEpTION SPARQL endpoint to retrieve SNOMED semantic tags
+    for a batch of concept IDs at once.
 
     Returns:
-        dict: Mapping of SNOMED concept URI -> label content in parentheses.
+        dict[str, str]: Mapping of full SNOMED URI -> semantic tag (e.g., "disorder").
     """
-    label_map = {}
 
-    subject_pattern = re.compile(r'^<\s*(http://snomed\.info/id/\d+)\s*>')
-    label_patterns = [
-        re.compile(r'rdfs:label\s+"(.+?)"\s*@' + re.escape(lang)),
-        re.compile(r'skos:prefLabel\s+"(.+?)"\s*@' + re.escape(lang)),
-    ]
-    paren_pattern = re.compile(r'\(([^)]+)\)')  # matches text inside ( )
+    # Ensure scheme is present
+    if not base_url.startswith(("http://", "https://")):
+        base_url = f"http://{base_url}"
 
-    for info in zip_file.infolist():
-        if info.filename.startswith("kb/") and info.filename.endswith(".ttl"):
-            try:
-                with zip_file.open(info.filename) as ttl_file:
-                    current_uri = None
-                    collecting = False
-                    block_lines = []
+    base_url = f"{base_url.rstrip('/')}/api/aero/v1"
+    endpoint = f"{base_url}/projects/{project_id}/kbs/{kb_id}/sparql"
+    headers = {"Accept": "application/sparql-results+xml"}
 
-                    for line in io.TextIOWrapper(ttl_file, encoding="utf-8"):
-                        stripped = line.strip()
+    semantic_map = {}
+    paren_pattern = re.compile(r'\(([^)]+)\)')
 
-                        subject_match = subject_pattern.match(stripped)
-                        if subject_match:
-                            current_uri = subject_match.group(1)
-                            collecting = current_uri in required_ids
-                            block_lines = [stripped]
-                            continue
+    for batch in batched(snomed_ids, batch_size):
+        values_clause = "\n    ".join(f"<{uri}>" for uri in batch)
+        query = f"""
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 
-                        if collecting:
-                            block_lines.append(stripped)
+        SELECT ?concept ?label WHERE {{
+          VALUES ?concept {{ {values_clause} }}
+          ?concept (rdfs:label|skos:prefLabel) ?label .
+          FILTER (lang(?label) = "en")
+        }}
+        """
 
-                            if stripped.endswith('.'):
-                                full_block = ' '.join(block_lines)
-                                for pat in label_patterns:
-                                    match = pat.search(full_block)
-                                    if match:
-                                        full_label = match.group(1)
-                                        paren_match = paren_pattern.search(full_label)
-                                        if paren_match:
-                                            label_map[current_uri] = paren_match.group(1)
-                                        break
-                                collecting = False
-            except Exception as e:
-                log.warning(f"Error parsing TTL file {info.filename}: {e}")
-    return label_map
+        try:
+            store = SPARQLStore(
+                endpoint,
+                method="POST",
+                auth=auth,
+                returnFormat="xml",
+                headers=headers,
+            )
+            results = store.query(query)
+
+            for row in results:
+                concept_uri = str(row.concept)
+                label = str(row.label)
+                matches = paren_pattern.findall(label)
+                if matches:
+                    semantic_map[concept_uri] = matches[-1]
+
+        except Exception as e:
+            log.warning(f"SPARQL batch query failed for {len(batch)} IDs: {e}")
+
+    return semantic_map
+
+
+def get_kb_id_from_project_meta(project_meta: dict) -> str | None:
+    """
+    Determine which knowledge base ID to use from the exportedproject.json metadata.
+
+    - If any layer feature type starts with "kb:", a KB is needed.
+    - If that feature's type is "kb:<ANY>", return the first enabled KB's ID.
+    - Otherwise, return the KB matching the feature's KB name (if specified).
+    """
+    knowledge_bases = project_meta.get("knowledge_bases", [])
+    if not knowledge_bases:
+        return None
+
+    kb_id = None
+
+    for layer in project_meta.get("layers", []):
+        for feature in layer.get("features", []):
+            feature_type = feature.get("type", "")
+            if feature_type.startswith("kb:"):
+                kb_type = feature_type.split("kb:", 1)[1]
+                if kb_type == "<ANY>":
+                    # Use the first enabled KB
+                    for kb in knowledge_bases:
+                        if kb.get("enabled", False):
+                            kb_id = kb.get("id")
+                            break
+                else:
+                    # Try to match the KB name (case-insensitive)
+                    for kb in knowledge_bases:
+                        if kb["name"].lower() == kb_type.lower():
+                            kb_id = kb.get("id")
+                            break
+            if kb_id:
+                break
+        if kb_id:
+            break
+
+    return kb_id
 
 
 
-def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
+def read_dir(
+        dir_path: str,
+        selected_projects_data: dict,
+        api_url: str = None, 
+        auth: tuple = None, 
+) -> list[dict]:
     projects = []
 
     for file_name in os.listdir(dir_path):
-        if selected_projects and file_name.split(".")[0] not in selected_projects:
+        if selected_projects_data and file_name.split(".")[0] not in selected_projects_data.keys():
             continue
         file_path = os.path.join(dir_path, file_name)
         if zipfile.is_zipfile(file_path):
@@ -357,8 +411,20 @@ def read_dir(dir_path: str, selected_projects: list = None) -> list[dict]:
                             log.warning(f"Failed to load annotation file {annotation_file} from {file_name}: {e}")
                             continue
 
-                    snomed_label_map = extract_required_snomed_labels(zip_file, used_snomed_ids)
+                    kb_id = get_kb_id_from_project_meta(project_meta)
+                    if kb_id:
+                        log.info(f"Detected knowledge base ID '{kb_id}' for project {file_name}")
+                    else:
+                        log.warning(f"No knowledge base detected in project {file_name}")
 
+
+                    snomed_label_map = {}
+                    if api_url and auth and kb_id and used_snomed_ids:
+                        project_id = selected_projects_data[file_name.split(".")[0]]
+                        snomed_label_map = get_snomed_semantic_tag_map(
+                            api_url, project_id, kb_id, used_snomed_ids, auth=auth
+                        )
+                        log.info(f"Fetched SNOMED labels for {len(snomed_label_map)} concepts in project {file_name}")
 
                     projects.append(
                         {
@@ -411,7 +477,7 @@ def select_method_to_import_data():
     """
 
     method = st.sidebar.radio(
-        "Choose your method to import data:", ("Manually", "API"), index=0
+        "Choose your method to import data:", ("Manually", "API"), index=1
     )
     if method == "Manually":
         st.sidebar.write(
@@ -438,7 +504,11 @@ def select_method_to_import_data():
 
                 selected_projects = [f.name.split(".")[0] for f in uploaded_files]
 
-                st.session_state["projects"] = read_dir(temp_dir, selected_projects)
+                # st.session_state["projects"] = read_dir(temp_dir, selected_projects)
+                st.session_state["projects"] = read_dir(
+                    dir_path=temp_dir,
+                    selected_projects_data={name: -1 for name in selected_projects},
+                )
                 st.session_state["projects_folder"] = temp_dir
 
             elif projects_folder:
@@ -481,13 +551,13 @@ def select_method_to_import_data():
                 )
                 st.session_state["selected_projects"] = selected_projects
 
-            selected_projects_names = []
+            selected_projects_data = {}
             button = st.sidebar.button("Generate Reports")
             if button:
                 for project_id, is_selected in selected_projects.items():
                     if is_selected:
                         project = inception_client.api.project(project_id)
-                        selected_projects_names.append(project.project_name)
+                        selected_projects_data[project.project_name] = project_id
                         file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
                         log.info(
@@ -502,7 +572,9 @@ def select_method_to_import_data():
 
                 st.session_state["method"] = "API"
                 st.session_state["projects"] = read_dir(
-                    projects_folder, selected_projects_names
+                    dir_path=projects_folder,
+                    selected_projects_data=selected_projects_data,
+                    api_url=api_url, auth=(username, password),
                 )
                 set_sidebar_state("collapsed")
 
