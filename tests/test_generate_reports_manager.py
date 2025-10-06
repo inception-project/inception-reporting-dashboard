@@ -64,7 +64,7 @@ def test_read_dir_correctly_parses_zip_files(mock_rmtree, mock_is_zipfile, mock_
             annotation_content = {"dummy": "content"}
             zipf.writestr('annotation/doc1/annotator1.json', json.dumps(annotation_content))
 
-        projects = read_dir(temp_dir)
+        projects = read_dir(temp_dir, selected_projects_data=None)
 
         assert len(projects) == 1, "Should correctly parse zip files and extract project data"
         project = projects[0]
