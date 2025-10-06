@@ -217,7 +217,7 @@ def load_excluded_types():
 def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> dict:
     """
     Efficiently extract required SNOMED concept labels from TTL files inside a ZIP.
-    Returns only the text inside parentheses (e.g., "attribute" from 'Foo Bar (attribute)').
+    Returns only the text inside the LAST parentheses.
 
     Args:
         zip_file (ZipFile): Open ZipFile object (INCEpTION project).
@@ -234,7 +234,8 @@ def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> di
         re.compile(r'rdfs:label\s+"(.+?)"\s*@' + re.escape(lang)),
         re.compile(r'skos:prefLabel\s+"(.+?)"\s*@' + re.escape(lang)),
     ]
-    paren_pattern = re.compile(r'\(([^)]+)\)')  # matches text inside ( )
+
+    paren_pattern = re.compile(r'\(([^)]+)\)')
 
     for info in zip_file.infolist():
         if info.filename.startswith("kb/") and info.filename.endswith(".ttl"):
@@ -263,9 +264,9 @@ def extract_required_snomed_labels(zip_file, required_ids: set, lang='en') -> di
                                     match = pat.search(full_block)
                                     if match:
                                         full_label = match.group(1)
-                                        paren_match = paren_pattern.search(full_label)
-                                        if paren_match:
-                                            label_map[current_uri] = paren_match.group(1)
+                                        paren_matches = paren_pattern.findall(full_label)
+                                        if paren_matches:
+                                            label_map[current_uri] = paren_matches[-1]
                                         break
                                 collecting = False
             except Exception as e:
