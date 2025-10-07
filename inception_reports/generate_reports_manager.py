@@ -136,18 +136,6 @@ def create_directory_in_home():
     except FileExistsError:
         pass
 
-
-def set_sidebar_state(value):
-    if st.session_state.sidebar_state == value:
-        st.session_state.flag = value
-        st.session_state.sidebar_state = (
-            "expanded" if value == "collapsed" else "collapsed"
-        )
-    else:
-        st.session_state.sidebar_state = value
-    st.rerun()
-
-
 def translate_tag(tag, translation_path=None):
     """
     Translate the given tag to a human-readable format.
