@@ -250,11 +250,9 @@ def get_snomed_semantic_tag_map(
         values_clause = "\n    ".join(f"<{uri}>" for uri in batch)
         query = f"""
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-
         SELECT ?concept ?label WHERE {{
           VALUES ?concept {{ {values_clause} }}
-          ?concept (rdfs:label|skos:prefLabel) ?label .
+          ?concept (rdfs:label) ?label .
           FILTER (lang(?label) = "en")
         }}
         """
@@ -321,124 +319,128 @@ def get_kb_id_from_project_meta(project_meta: dict) -> str | None:
     return kb_id
 
 
-
 def read_dir(
-        dir_path: str,
-        selected_projects_data: dict,
-        api_url: str = None, 
-        auth: tuple = None, 
+    dir_path: str,
+    selected_projects_data: dict,
+    mode: str,
+    api_url: str = None,
+    auth: tuple = None,
 ) -> list[dict]:
     projects = []
 
     for file_name in os.listdir(dir_path):
-        if selected_projects_data and file_name.split(".")[0] not in selected_projects_data.keys():
+        project_stem = file_name.split(".")[0]
+        if selected_projects_data and project_stem not in selected_projects_data:
             continue
+
         file_path = os.path.join(dir_path, file_name)
-        if zipfile.is_zipfile(file_path):
-            try:
-                with zipfile.ZipFile(file_path, "r") as zip_file:
-                    # Read project metadata directly from ZIP without extracting
-                    try:
-                        project_meta_data = zip_file.read("exportedproject.json")
-                        project_meta = json.loads(project_meta_data.decode('utf-8'))
-                        
-                        description = project_meta.get("description", "")
-                        project_tags = (
-                            [
-                                translate_tag(word.strip("#"))
-                                for word in description.split()
-                                if word.startswith("#")
-                            ]
-                            if description
-                            else []
-                        )
+        if not zipfile.is_zipfile(file_path):
+            continue
 
-                        project_documents = project_meta.get("source_documents")
-                        if not project_documents:
-                            log.warning(f"No source documents found in project {file_name}")
-                            continue
-                    except KeyError:
-                        log.warning(f"No exportedproject.json found in {file_name}")
+        try:
+            with zipfile.ZipFile(file_path, "r") as zip_file:
+                # ---- Read project metadata ----
+                try:
+                    project_meta = json.loads(zip_file.read("exportedproject.json").decode("utf-8"))
+                except KeyError:
+                    log.warning(f"No exportedproject.json found in {file_name}")
+                    continue
+
+                project_documents = project_meta.get("source_documents", [])
+                if not project_documents:
+                    log.warning(f"No source documents found in project {file_name}")
+                    continue
+
+                # ---- Extract tags from description ----
+                description = project_meta.get("description", "")
+                project_tags = (
+                    [translate_tag(word.strip("#")) for word in description.split() if word.startswith("#")]
+                    if description
+                    else []
+                )
+
+                # ---- Prepare containers ----
+                annotations = {}
+                used_snomed_ids = set()
+
+                # ---- Process each document ----
+                for doc in project_documents:
+                    doc_name = doc["name"]
+                    state = doc.get("state", "")
+                    annotations[doc_name] = {}
+
+                    # Pick correct folder depending on document state
+                    folder_prefix = (
+                        f"curation/{doc_name}/" if state == "CURATION_FINISHED" else f"annotation/{doc_name}/"
+                    )
+
+                    # Find all CAS JSON files under that path
+                    matching_files = [
+                        info.filename
+                        for info in zip_file.infolist()
+                        if info.filename.startswith(folder_prefix)
+                        and info.filename.endswith(".json")
+                        and not info.is_dir()
+                    ]
+
+                    if not matching_files:
+                        log.warning(f"No CAS found for {doc_name} in {file_name} ({folder_prefix})")
                         continue
 
-                    used_snomed_ids = set()
-                    # Process annotations directly from ZIP with better performance
-                    annotations = {}
-                    # Get annotation files more efficiently
-                    annotation_files = []
-                    try:
-                        for info in zip_file.infolist():
-                            if (info.filename.startswith("annotation/") and 
-                                info.filename.endswith(".json") and
-                                not info.is_dir()):
-                                annotation_files.append(info.filename)
-                    except Exception as e:
-                        log.warning(f"Error reading ZIP file list for {file_name}: {e}")
-                        continue
-                    
-                    # Group files by folder efficiently
-                    folder_files = defaultdict(list)
-                    for name in annotation_files:
-                        folder = "/".join(name.split("/")[:-1])
-                        folder_files[folder].append(name)
-
-                    # Select appropriate annotation files
-                    selected_annotation_files = []
-                    for folder, files in folder_files.items():
-                        if len(files) == 1 and files[0].endswith("INITIAL_CAS.json"):
-                            selected_annotation_files.append(files[0])
-                        else:
-                            selected_annotation_files.extend(
-                                file for file in files
-                                if not file.endswith("INITIAL_CAS.json")
-                            )
-                    
-                    for annotation_file in selected_annotation_files:
+                    # Load all annotator CAS files
+                    for cas_path in matching_files:
+                        annotator_name = os.path.splitext(os.path.basename(cas_path))[0]
                         try:
-                            subfolder_name = os.path.dirname(annotation_file).split("/")[1]
-                            with zip_file.open(annotation_file) as cas_file:
+                            with zip_file.open(cas_path) as cas_file:
                                 cas = cassis.load_cas_from_json(cas_file)
-                                annotations[subfolder_name] = cas
+                                annotations[doc_name][annotator_name] = cas
 
-                                # Extract SNOMED concept IDs from the annotations
+                                # Extract SNOMED IDs
                                 if "gemtex.Concept" in [t.name for t in cas.typesystem.get_types()]:
                                     for concept in cas.select("gemtex.Concept"):
-                                        concept_id = concept.get("id")
-                                        if concept_id:
-                                            used_snomed_ids.add(concept_id)
-                                    
+                                        cid = concept.get("id")
+                                        if cid:
+                                            used_snomed_ids.add(cid)
+
                         except Exception as e:
-                            log.warning(f"Failed to load annotation file {annotation_file} from {file_name}: {e}")
+                            log.warning(f"Failed to load {cas_path} from {file_name}: {e}")
                             continue
 
+                snomed_label_map = {}
+                if mode == "manual":
+                    log.info("SNOMED labels are not supported in manual mode")
+                elif mode == "api":
+                    # ---- Detect KB ----
                     kb_id = get_kb_id_from_project_meta(project_meta)
                     if kb_id:
-                        log.info(f"Detected knowledge base ID '{kb_id}' for project {file_name}")
+                        log.info(f"Detected KB '{kb_id}' for project {file_name}")
                     else:
-                        log.warning(f"No knowledge base detected in project {file_name}")
+                        log.warning(f"No KB detected for project {file_name}")
 
-
-                    snomed_label_map = {}
+                    # ---- Fetch SNOMED semantic tags ----
                     if api_url and auth and kb_id and used_snomed_ids:
-                        project_id = selected_projects_data[file_name.split(".")[0]]
+                        project_id = selected_projects_data[project_stem]
                         snomed_label_map = get_snomed_semantic_tag_map(
                             api_url, project_id, kb_id, used_snomed_ids, auth=auth
                         )
-                        log.info(f"Fetched SNOMED labels for {len(snomed_label_map)} concepts in project {file_name}")
+                        log.info(
+                            f"Fetched SNOMED labels for {len(snomed_label_map)} concepts in {file_name}"
+                        )
 
-                    projects.append(
-                        {
-                            "name": file_name,
-                            "tags": project_tags if project_tags else None,
-                            "documents": project_documents,
-                            "annotations": annotations,
-                            "snomed_labels": snomed_label_map,
-                        }
-                    )
-                    
-            except Exception as e:
-                log.error(f"Error processing project file {file_name}: {e}")
-                continue
+                # ---- Append project ----
+                projects.append(
+                    {
+                        "name": file_name,
+                        "tags": project_tags if project_tags else None,
+                        "documents": project_documents,
+                        "annotations": annotations,
+                        "snomed_labels": snomed_label_map,
+                    }
+                )
+
+        except Exception as e:
+            log.error(f"Error processing {file_name}: {e}")
+            continue
 
     return projects
 
@@ -479,13 +481,11 @@ def select_method_to_import_data():
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=1
     )
+
+    # --- MANUAL IMPORT ---
     if method == "Manually":
-        st.sidebar.write(
-            "Please input the path to the folder containing the INCEpTION projects."
-        )
-        projects_folder = st.sidebar.text_input("Projects Folder:", value="")
         uploaded_files = st.sidebar.file_uploader(
-            "Or upload project files:", accept_multiple_files=True, type="zip"
+            "Upload project files:", accept_multiple_files=True, type="zip"
         )
 
         button = st.sidebar.button("Generate Reports")
@@ -494,7 +494,6 @@ def select_method_to_import_data():
                 temp_dir = os.path.join(
                     os.path.expanduser("~"), ".inception_reports", "temp_uploads"
                 )
-
                 os.makedirs(temp_dir, exist_ok=True)
 
                 for uploaded_file in uploaded_files:
@@ -504,30 +503,29 @@ def select_method_to_import_data():
 
                 selected_projects = [f.name.split(".")[0] for f in uploaded_files]
 
-                # st.session_state["projects"] = read_dir(temp_dir, selected_projects)
                 st.session_state["projects"] = read_dir(
                     dir_path=temp_dir,
                     selected_projects_data={name: -1 for name in selected_projects},
+                    mode="manual",
                 )
                 st.session_state["projects_folder"] = temp_dir
 
-            elif projects_folder:
-                st.session_state["projects_folder"] = projects_folder
-                st.session_state["projects"] = read_dir(projects_folder)
-
             st.session_state["method"] = "Manually"
             button = False
-            set_sidebar_state("collapsed")
 
+    # --- API IMPORT ---
     elif method == "API":
         projects_folder = f"{os.path.expanduser('~')}/.inception_reports/projects"
         os.makedirs(os.path.dirname(projects_folder), exist_ok=True)
         st.session_state["projects_folder"] = projects_folder
+
         api_url = st.sidebar.text_input("Enter API URL:", "")
         username = st.sidebar.text_input("Username:", "")
         password = st.sidebar.text_input("Password:", type="password", value="")
+
         inception_status = st.session_state.get("inception_status", False)
         inception_client = st.session_state.get("inception_client", None)
+
         if not inception_status:
             inception_status, inception_client = login_to_inception(
                 api_url, username, password
@@ -561,7 +559,7 @@ def select_method_to_import_data():
                         file_path = f"{projects_folder}/{project.project_name}.zip"
                         st.sidebar.write(f"Importing project: {project.project_name}")
                         log.info(
-                            f"Importing project {project.project_name} into {file_path} "
+                            f"Importing project {project.project_name} into {file_path}"
                         )
                         project_export = inception_client.api.export_project(
                             project, "jsoncas"
@@ -574,9 +572,37 @@ def select_method_to_import_data():
                 st.session_state["projects"] = read_dir(
                     dir_path=projects_folder,
                     selected_projects_data=selected_projects_data,
-                    api_url=api_url, auth=(username, password),
+                    api_url=api_url,
+                    auth=(username, password),
+                    mode="api",
                 )
-                set_sidebar_state("collapsed")
+
+    # --- AGGREGATION MODE SELECTOR (always visible once projects exist) ---
+    if "projects" in st.session_state or "projects_folder" in st.session_state:
+        st.sidebar.markdown("---")
+        aggregation_mode = st.sidebar.radio(
+            "Annotation Aggregation Mode",
+            ("Sum", "Average", "Max"),
+            index=0,
+            help=(
+                "How to combine multiple annotator CAS files per document:\n\n"
+                "- **Sum**: Count all annotations from all annotators (default)\n"
+                "- **Average**: Normalize counts by number of annotators\n"
+                "- **Max**: Take the annotator with the most annotations"
+            ),
+        )
+        st.session_state["aggregation_mode"] = aggregation_mode
+    
+    st.sidebar.markdown("---")
+    # --- Visualization scope toggle ---
+    show_only_curated = st.sidebar.checkbox(
+        "Show only curated documents in bar chart",
+        value=True,
+        help="If checked, the annotation type bar chart will only include documents whose state is CURATION_FINISHED.",
+    )
+    st.session_state["show_only_curated"] = show_only_curated
+
+
 
 
 def find_element_by_name(element_list, name):
@@ -598,105 +624,128 @@ def find_element_by_name(element_list, name):
     return name.split(".")[-1]
 
 
-def get_type_counts(annotations, snomed_labels=None):
+def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
     """
-    Calculate the count of each type in the given annotations. Each annotation is a CAS object.
+    Calculate the count of each annotation type across all documents.
 
     Args:
-        annotations (dict): A dictionary containing the annotations.
+        annotations (dict): {doc_name: {annotator_name: cas}} structure.
+        snomed_labels (dict): Optional mapping for SNOMED concept IDs.
+        aggregation_mode (str): One of "Sum", "Average", or "Max".
 
     Returns:
-        dict: A dictionary containing the count of each type, both total and per document.
-              The structure is {type_name: {'total': count, 'documents': {doc_id: count}}}.
+        dict: {type_name: {'total': count, 'documents': {doc_id: count}, 'features': {...}}}
     """
 
     type_count = {}
-
-    # Assuming that all documents have the same layer definition
-    first_doc = next(iter(annotations.values()))
-    layer_definitions = first_doc.select(
-        "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
-    )
-
-    # Load the excluded types from config
     excluded_types = load_excluded_types()
 
-    for doc_id, cas in annotations.items():
-        log.debug(f"Processing {doc_id}")
-        # Get the list of relevant types for the current CAS object
-        relevant_types = [
-            t for t in cas.typesystem.get_types() if t.name not in excluded_types
-        ]
+    # Helper function to count annotations within a single CAS
+    def count_annotations(cas):
+        counts = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
+        try:
+            layer_defs = cas.select("de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition")
+        except Exception:
+            layer_defs = []
 
-        for t in relevant_types:
-            cas_select = cas.select(t.name)
-            count = len(cas_select)
-            if count == 0:
+        for t in cas.typesystem.get_types():
+            if t.name in excluded_types:
                 continue
 
-            # Filter for the features that are relevant
-            annotations_features = [
-                feature
-                for feature in t.all_features
-                if feature.name
-                not in {
+            annotations_in_type = list(cas.select(t.name))
+            if not annotations_in_type:
+                continue
+
+            type_name = find_element_by_name(layer_defs, t.name)
+            counts[type_name]["total"] += len(annotations_in_type)
+
+            for feature in t.all_features:
+                if feature.name in {
                     cassis.typesystem.FEATURE_BASE_NAME_END,
                     cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
                     cassis.typesystem.FEATURE_BASE_NAME_SOFA,
-                    "literal"
-                }
-            ]
-
-            # Get UI Name for layer type
-            type_name = find_element_by_name(layer_definitions, t.name)
-
-            if type_name not in type_count:
-                type_count[type_name] = {"total": 0, "documents": {}, "features": {}}
-
-            type_count[type_name]["total"] += count
-            type_count[type_name]["documents"].setdefault(doc_id, 0)
-            type_count[type_name]["documents"][doc_id] += count
-
-            # Count the feature occurrences within the selected CAS
-            for feature in annotations_features:
-                for cas_item in cas_select:
-                    feature_value = cas_item.get(feature.name)
-                    if feature_value is None:
+                    "literal",
+                }:
+                    continue
+                for item in annotations_in_type:
+                    value = item.get(feature.name)
+                    if value is None:
                         continue
                     if t.name == "gemtex.Concept" and feature.name == "id":
-                        feature_value = snomed_labels.get(feature_value, "NONE")
-                    if feature_value not in type_count[type_name]["features"]:
-                        type_count[type_name]["features"][feature_value] = {}
+                        value = snomed_labels.get(value, value)
+                    counts[type_name]["features"][value] += 1
+        return counts
 
-                    type_count[type_name]["features"][feature_value].setdefault(
-                        doc_id, 0
-                    )
-                    type_count[type_name]["features"][feature_value][doc_id] += 1
+    # Helper: merge counts from multiple CASes
+    def merge_counts(counts_list):
+        merged = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
+        for cdict in counts_list:
+            for t, vals in cdict.items():
+                merged[t]["total"] += vals["total"]
+                for feat, feat_count in vals["features"].items():
+                    merged[t]["features"][feat] += feat_count
+        return merged
 
-    for type_name, type_data in type_count.items():
-        type_data["features"] = dict(
-            sorted(
-                type_data["features"].items(),
-                key=lambda x: sum(x[1].values()),
-                reverse=True,
-            )
-        )
-    type_count = dict(
-        sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True)
-    )
+    def average_counts(counts_list):
+        if not counts_list:
+            return {}
+        merged = merge_counts(counts_list)
+        for t, vals in merged.items():
+            vals["total"] = round(vals["total"] / len(counts_list))
+            for feat in vals["features"]:
+                vals["features"][feat] = round(vals["features"][feat] / len(counts_list))
+        return merged
 
-    for category, details in type_count.items():
-        if category in ["PHI", "Concept"]:
-            print(f"Skipping {category} category")
-            # Keep detailed per-document breakdown for PHI
+    def max_counts(counts_list):
+        # pick CAS with max total annotations
+        max_total = 0
+        best = {}
+        for cdict in counts_list:
+            total = sum(v["total"] for v in cdict.values())
+            if total > max_total:
+                max_total = total
+                best = cdict
+        return best
+
+    # Iterate over all documents
+    for doc_name, annotator_map in annotations.items():
+        cas_list = list(annotator_map.values())
+        if not cas_list:
             continue
-        if len(details["features"]) >= 2:
-            type_count[category] = {"total": details["total"], "documents": details["documents"], "features": {}}
-            for subcategory, subvalues in details["features"].items():
-                type_count[category]["features"][subcategory] = sum(subvalues.values())
 
+        # Get per-annotator counts
+        per_cas_counts = [count_annotations(cas) for cas in cas_list]
 
-    log.debug(f"Type counts object : {type_count}")
+        # Combine depending on mode
+        if aggregation_mode == "Sum":
+            combined_counts = merge_counts(per_cas_counts)
+        elif aggregation_mode == "Average":
+            combined_counts = average_counts(per_cas_counts)
+        elif aggregation_mode == "Max":
+            combined_counts = max_counts(per_cas_counts)
+        else:
+            combined_counts = merge_counts(per_cas_counts)
+
+        # Aggregate into global type_count
+        for tname, vals in combined_counts.items():
+            if tname not in type_count:
+                type_count[tname] = {"total": 0, "documents": {}, "features": {}}
+            type_count[tname]["total"] += vals["total"]
+            type_count[tname]["documents"][doc_name] = vals["total"]
+
+            # Merge feature counts
+            for feat_val, feat_count in vals["features"].items():
+                if feat_val not in type_count[tname]["features"]:
+                    type_count[tname]["features"][feat_val] = {}
+                type_count[tname]["features"][feat_val][doc_name] = feat_count
+
+    # Sort and clean
+    for tname, tvals in type_count.items():
+        tvals["features"] = dict(
+            sorted(tvals["features"].items(), key=lambda x: sum(x[1].values()), reverse=True)
+        )
+    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+
     return type_count
 
 
@@ -778,7 +827,61 @@ def plot_project_progress(project) -> None:
     project_tags = project["tags"]
     project_annotations = project["annotations"]
     project_documents = project["documents"]
-    type_counts = get_type_counts(project_annotations, project.get("snomed_labels", {}))
+    aggregation_mode = st.session_state.get("aggregation_mode", "Sum")
+    type_counts = get_type_counts(project_annotations, project.get("snomed_labels", {}), aggregation_mode)
+
+    show_only_curated = st.session_state.get("show_only_curated", True)
+
+    curated_docs = {
+        doc["name"]
+        for doc in project["documents"]
+        if doc.get("state") == "CURATION_FINISHED"
+    }
+
+    # If no curated documents exist, force disable this mode
+    if show_only_curated and not curated_docs:
+        st.warning(
+            f"No curated documents found in project **{project['name']}** — "
+            "showing annotations break down for all other documents instead."
+        )
+        show_only_curated = False
+        st.session_state["show_only_curated"] = False
+
+    # Proceed with filtering only if the flag is still True
+    if show_only_curated:
+        curated_type_counts = {}
+
+        for tname, tvals in type_counts.items():
+            curated_docs_counts = {
+                doc: count for doc, count in tvals["documents"].items() if doc in curated_docs
+            }
+
+            if not curated_docs_counts:
+                continue  # skip types that appear only in non-curated docs
+
+            curated_total = sum(curated_docs_counts.values())
+
+            curated_features = {}
+            for feat, feat_docs in tvals["features"].items():
+                filtered_feat_docs = {
+                    doc: count for doc, count in feat_docs.items() if doc in curated_docs
+                }
+                if filtered_feat_docs:
+                    curated_features[feat] = filtered_feat_docs
+
+            curated_type_counts[tname] = {
+                "total": curated_total,
+                "documents": curated_docs_counts,
+                "features": curated_features,
+            }
+
+        # Keep both versions
+        full_type_counts = type_counts
+        type_counts = curated_type_counts
+    else:
+        # Use all documents
+        full_type_counts = type_counts
+
 
     if project_tags:
         st.write(
@@ -816,12 +919,13 @@ def plot_project_progress(project) -> None:
         log.debug(f"Start processing tokens for document {doc}")
         state = doc["state"]
         if state in doc_token_categories:
-            doc_token_categories[state] += type_counts["Token"]["documents"][doc["name"]]
+            token_docs = full_type_counts.get("Token", {}).get("documents", {})
+            doc_token_categories[state] += token_docs.get(doc["name"], 0)
 
     output_type_counts = {}
     doc_states = {doc["name"]: doc["state"] for doc in project_documents}
 
-    for category, details in type_counts.items():
+    for category, details in full_type_counts.items():
         # Calculate total count split by document status
         total_by_status = defaultdict(int)
         for doc_name, count in details["documents"].items():
@@ -854,7 +958,8 @@ def plot_project_progress(project) -> None:
         "project_tags": project_tags,
         "doc_categories": doc_categories,
         "doc_token_categories": doc_token_categories,
-        "type_counts": output_type_counts, 
+        "type_counts": output_type_counts,
+        "aggregation_mode": st.session_state.get("aggregation_mode", "Sum"),
         "created": datetime.now().date().isoformat(),
     }
 
@@ -1023,7 +1128,7 @@ def plot_project_progress(project) -> None:
 
     bar_chart.update_layout(
         title=dict(
-            text="Types of Annotations",
+            text=f"Types of Annotations {'(Curated Docs)' if show_only_curated else '(All Docs)'}",
             font=dict(size=24),
             y=0.95,
             x=0.45,
