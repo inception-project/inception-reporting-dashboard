@@ -57,23 +57,36 @@ def test_read_dir_correctly_parses_zip_files(mock_rmtree, mock_is_zipfile, mock_
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             project_meta = {
                 "description": "A mock project #tag1 #tag2",
-                "source_documents": ["doc1.txt", "doc2.txt"]
+                "source_documents": [
+                    {
+                        "name": "doc1.txt",
+                        "format": "text",
+                        "state": "ANNOTATION_IN_PROGRESS",
+                    },
+                    {
+                        "name": "doc2.txt",
+                        "format": "text",
+                        "state": "ANNOTATION_IN_PROGRESS",
+                    },
+                ],
             }
             zipf.writestr('exportedproject.json', json.dumps(project_meta))
 
             annotation_content = {"dummy": "content"}
-            zipf.writestr('annotation/doc1/annotator1.json', json.dumps(annotation_content))
+            zipf.writestr('annotation/doc1.txt/annotator1.json', json.dumps(annotation_content))
+            zipf.writestr('annotation/doc2.txt/annotator1.json', json.dumps(annotation_content))
 
-        projects = read_dir(temp_dir, selected_projects_data=None)
+        selected_projects_data = {"project1": -1}
+        projects = read_dir(temp_dir, selected_projects_data=selected_projects_data, mode='manual')
 
         assert len(projects) == 1, "Should correctly parse zip files and extract project data"
         project = projects[0]
         print(project['annotations'])
         assert project['name'] == zip_name, "Project name should match the zip file name"
         assert set(project['tags']) == {"tag1", "tag2"}, "Should extract correct tags from project metadata"
-        assert project['documents'] == ["doc1.txt", "doc2.txt"], "Should list all source documents"
-        assert 'doc1' in project['annotations'], "Should include annotations in the project data"
-        assert project['annotations']['doc1'] == "MockCASObject", "Should load CAS objects for annotations"
+        assert project['documents'] == project_meta["source_documents"], "Should list all source documents"
+        assert 'doc1.txt' in project['annotations'], "Should include annotations in the project data"
+        assert project['annotations']['doc1.txt'] == {'annotator1': 'MockCASObject'}, "Should load CAS objects for annotations"
 
 
 def test_export_data(tmpdir):
