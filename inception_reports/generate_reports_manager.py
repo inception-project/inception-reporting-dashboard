@@ -317,6 +317,9 @@ def read_dir(
 ) -> list[dict]:
     projects = []
 
+    excluded_types = load_excluded_types()
+
+
     for file_name in os.listdir(dir_path):
         project_stem = file_name.split(".")[0]
         if selected_projects_data and project_stem not in selected_projects_data:
@@ -349,7 +352,7 @@ def read_dir(
                 )
 
                 # ---- Prepare containers ----
-                annotations = {}
+                annotations = {}          # now holds stats per annotator, not CAS
                 used_snomed_ids = set()
 
                 # ---- Process each document ----
@@ -376,20 +379,19 @@ def read_dir(
                         log.warning(f"No CAS found for {doc_name} in {file_name} ({folder_prefix})")
                         continue
 
-                    # Load all annotator CAS files
+                    # Load all annotator CAS files, but keep only lightweight stats
                     for cas_path in matching_files:
                         annotator_name = os.path.splitext(os.path.basename(cas_path))[0]
                         try:
                             with zip_file.open(cas_path) as cas_file:
                                 cas = cassis.load_cas_from_json(cas_file)
-                                annotations[doc_name][annotator_name] = cas
 
-                                # Extract SNOMED IDs
-                                if "gemtex.Concept" in [t.name for t in cas.typesystem.get_types()]:
-                                    for concept in cas.select("gemtex.Concept"):
-                                        cid = concept.get("id")
-                                        if cid:
-                                            used_snomed_ids.add(cid)
+                            cas_counts, cas_snomed_ids = compute_cas_stats(cas, excluded_types)
+                            annotations[doc_name][annotator_name] = cas_counts
+                            used_snomed_ids.update(cas_snomed_ids)
+
+                            # Drop the CAS reference explicitly
+                            del cas
 
                         except Exception as e:
                             log.warning(f"Failed to load {cas_path} from {file_name}: {e}")
@@ -431,6 +433,8 @@ def read_dir(
             log.error(f"Error processing {file_name}: {e}")
             continue
 
+    # Explicitly trigger garbage collection just to make sure all resources are freed
+    gc.collect()
     return projects
 
 
