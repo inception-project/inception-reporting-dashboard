@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import copy
+import gc
 import importlib.resources
 import io
 import json
@@ -38,6 +39,7 @@ import streamlit as st
 import toml
 from pycaprio import Pycaprio
 from rdflib.plugins.stores.sparqlstore import SPARQLStore
+from tqdm import tqdm
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -314,7 +316,11 @@ def read_dir(
     api_url: str = None,
     auth: tuple = None,
 ) -> list[dict]:
+
     projects = []
+
+    # Load excluded types once per read, not per CAS
+    excluded_types = load_excluded_types()
 
     for file_name in os.listdir(dir_path):
         project_stem = file_name.split(".")[0]
@@ -327,9 +333,12 @@ def read_dir(
 
         try:
             with zipfile.ZipFile(file_path, "r") as zip_file:
+
                 # ---- Read project metadata ----
                 try:
-                    project_meta = json.loads(zip_file.read("exportedproject.json").decode("utf-8"))
+                    project_meta = json.loads(
+                        zip_file.read("exportedproject.json").decode("utf-8")
+                    )
                 except KeyError:
                     log.warning(f"No exportedproject.json found in {file_name}")
                     continue
@@ -343,12 +352,37 @@ def read_dir(
                 description = project_meta.get("description", "")
                 project_tags = (
                     [translate_tag(word.strip("#")) for word in description.split() if word.startswith("#")]
-                    if description
-                    else []
+                    if description else []
+                )
+
+                # ---- PRECOUNT ALL CAS FILES FOR TQDM ----
+                all_cas_paths = []
+                for doc in project_documents:
+                    doc_name = doc["name"]
+                    state = doc.get("state", "")
+                    folder_prefix = (
+                        f"curation/{doc_name}/"
+                        if state == "CURATION_FINISHED"
+                        else f"annotation/{doc_name}/"
+                    )
+                    for info in zip_file.infolist():
+                        if (
+                            info.filename.startswith(folder_prefix)
+                            and info.filename.endswith(".json")
+                            and not info.is_dir()
+                        ):
+                            all_cas_paths.append(info.filename)
+
+                total_cas_files = len(all_cas_paths)
+                log.info(f"Started processing {total_cas_files} CAS files in {file_name}")
+                pbar = tqdm(
+                    total=total_cas_files,
+                    desc="Processing CAS files",
+                    leave=True,
                 )
 
                 # ---- Prepare containers ----
-                annotations = {}
+                annotations = {}          # per-document → per-annotator → stats
                 used_snomed_ids = set()
 
                 # ---- Process each document ----
@@ -357,12 +391,14 @@ def read_dir(
                     state = doc.get("state", "")
                     annotations[doc_name] = {}
 
-                    # Pick correct folder depending on document state
+                    # Determine path (curation or annotation)
                     folder_prefix = (
-                        f"curation/{doc_name}/" if state == "CURATION_FINISHED" else f"annotation/{doc_name}/"
+                        f"curation/{doc_name}/"
+                        if state == "CURATION_FINISHED"
+                        else f"annotation/{doc_name}/"
                     )
 
-                    # Find all CAS JSON files under that path
+                    # Collect CAS JSON files
                     matching_files = [
                         info.filename
                         for info in zip_file.infolist()
@@ -370,46 +406,61 @@ def read_dir(
                         and info.filename.endswith(".json")
                         and not info.is_dir()
                     ]
+                    
+                    # Use INITIAL_CAS.json only if it is the *only* file
+                    if len(matching_files) > 1:
+                        matching_files = [p for p in matching_files if not p.endswith("INITIAL_CAS.json")]
 
                     if not matching_files:
-                        log.warning(f"No CAS found for {doc_name} in {file_name} ({folder_prefix})")
+                        log.warning(
+                            f"No CAS found for {doc_name} in {file_name} ({folder_prefix})"
+                        )
                         continue
 
-                    # Load all annotator CAS files
+                    # ---- Load each CAS, compute stats, discard CAS ----
                     for cas_path in matching_files:
                         annotator_name = os.path.splitext(os.path.basename(cas_path))[0]
+
                         try:
                             with zip_file.open(cas_path) as cas_file:
                                 cas = cassis.load_cas_from_json(cas_file)
-                                annotations[doc_name][annotator_name] = cas
 
-                                # Extract SNOMED IDs
-                                if "gemtex.Concept" in [t.name for t in cas.typesystem.get_types()]:
-                                    for concept in cas.select("gemtex.Concept"):
-                                        cid = concept.get("id")
-                                        if cid:
-                                            used_snomed_ids.add(cid)
+                            cas_counts, cas_snomed_ids = compute_cas_stats(cas, excluded_types)
+                            annotations[doc_name][annotator_name] = cas_counts
+                            used_snomed_ids.update(cas_snomed_ids)
+
+                            # Drop CAS immediately
+                            del cas
 
                         except Exception as e:
                             log.warning(f"Failed to load {cas_path} from {file_name}: {e}")
-                            continue
 
+                        # Update tqdm
+                        pbar.update(1)
+
+                # ---- Done with project → close tqdm ----
+                pbar.close()
+
+                # ---- Fetch SNOMED mappings (API mode only) ----
                 snomed_label_map = {}
                 if mode == "manual":
                     log.info("SNOMED labels are not supported in manual mode")
+
                 elif mode == "api":
-                    # ---- Detect KB ----
                     kb_id = get_kb_id_from_project_meta(project_meta)
                     if kb_id:
                         log.info(f"Detected KB '{kb_id}' for project {file_name}")
                     else:
                         log.warning(f"No KB detected for project {file_name}")
 
-                    # ---- Fetch SNOMED semantic tags ----
                     if api_url and auth and kb_id and used_snomed_ids:
                         project_id = selected_projects_data[project_stem]
                         snomed_label_map = get_snomed_semantic_tag_map(
-                            api_url, project_id, kb_id, used_snomed_ids, auth=auth
+                            api_url,
+                            project_id,
+                            kb_id,
+                            used_snomed_ids,
+                            auth=auth,
                         )
                         log.info(
                             f"Fetched SNOMED labels for {len(snomed_label_map)} concepts in {file_name}"
@@ -423,13 +474,19 @@ def read_dir(
                         "documents": project_documents,
                         "annotations": annotations,
                         "snomed_labels": snomed_label_map,
+                        "inception_version": project_meta.get("application_version", "Older than 38.4"),
                     }
                 )
+
+            # Encourage cleanup
+            gc.collect()
 
         except Exception as e:
             log.error(f"Error processing {file_name}: {e}")
             continue
 
+    # Explicitly trigger garbage collection just to make sure all resources are freed
+    gc.collect()
     return projects
 
 
@@ -611,14 +668,74 @@ def find_element_by_name(element_list, name):
             return element.uiName
     return name.split(".")[-1]
 
+def compute_cas_stats(cas, excluded_types):
+    """
+    Compute lightweight stats for a single CAS and return:
+      - counts: {type_ui_name: {"total": int, "features": {value: count}}}
+      - snomed_ids: set of SNOMED IDs seen in gemtex.Concept/id
+
+    This avoids keeping the CAS object around after counting.
+    """
+    counts = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
+    snomed_ids = set()
+
+    skip_features = {
+        cassis.typesystem.FEATURE_BASE_NAME_END,
+        cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
+        cassis.typesystem.FEATURE_BASE_NAME_SOFA,
+        "literal",
+    }
+
+    try:
+        layer_defs = cas.select(
+            "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+        )
+    except Exception:
+        layer_defs = []
+
+    for t in cas.typesystem.get_types():
+        if t.name in excluded_types:
+            continue
+
+        relevant_features = [
+            f for f in t.all_features if f.name not in skip_features
+        ]
+        if not relevant_features:
+            continue
+
+        is_concept_type = t.name == "gemtex.Concept"
+        has_any = False
+        type_entry = None
+
+        for item in cas.select(t.name):
+            if not has_any:
+                type_name = find_element_by_name(layer_defs, t.name)
+                type_entry = counts[type_name]
+                has_any = True
+
+            type_entry["total"] += 1
+
+            for feature in relevant_features:
+                value = item.get(feature.name)
+                if value is None:
+                    continue
+                if is_concept_type and feature.name == "id":
+                    snomed_ids.add(value)
+                type_entry["features"][value] += 1
+
+    return counts, snomed_ids
+
 
 def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
     """
     Calculate the count of each annotation type across all documents.
 
     Args:
-        annotations (dict): {doc_name: {annotator_name: cas}} structure.
-        snomed_labels (dict): Optional mapping for SNOMED concept IDs.
+        annotations (dict):
+            {doc_name: {annotator_name: cas_stats}}
+            where cas_stats is:
+                {type_name: {'total': int, 'features': {value: count}}}
+        snomed_labels (dict): Optional mapping for SNOMED concept IDs -> semantic tag.
         aggregation_mode (str): One of "Sum", "Average", or "Max".
 
     Returns:
@@ -626,45 +743,7 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
     """
 
     type_count = {}
-    excluded_types = load_excluded_types()
 
-    # Helper function to count annotations within a single CAS
-    def count_annotations(cas):
-        counts = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
-        try:
-            layer_defs = cas.select("de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition")
-        except Exception:
-            layer_defs = []
-
-        for t in cas.typesystem.get_types():
-            if t.name in excluded_types:
-                continue
-
-            annotations_in_type = list(cas.select(t.name))
-            if not annotations_in_type:
-                continue
-
-            type_name = find_element_by_name(layer_defs, t.name)
-            counts[type_name]["total"] += len(annotations_in_type)
-
-            for feature in t.all_features:
-                if feature.name in {
-                    cassis.typesystem.FEATURE_BASE_NAME_END,
-                    cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
-                    cassis.typesystem.FEATURE_BASE_NAME_SOFA,
-                    "literal",
-                }:
-                    continue
-                for item in annotations_in_type:
-                    value = item.get(feature.name)
-                    if value is None:
-                        continue
-                    if t.name == "gemtex.Concept" and feature.name == "id":
-                        value = snomed_labels.get(value, value)
-                    counts[type_name]["features"][value] += 1
-        return counts
-
-    # Helper: merge counts from multiple CASes
     def merge_counts(counts_list):
         merged = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
         for cdict in counts_list:
@@ -678,14 +757,14 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
         if not counts_list:
             return {}
         merged = merge_counts(counts_list)
+        n = len(counts_list)
         for t, vals in merged.items():
-            vals["total"] = round(vals["total"] / len(counts_list))
-            for feat in vals["features"]:
-                vals["features"][feat] = round(vals["features"][feat] / len(counts_list))
+            vals["total"] = round(vals["total"] / n)
+            for feat in list(vals["features"].keys()):
+                vals["features"][feat] = round(vals["features"][feat] / n)
         return merged
 
     def max_counts(counts_list):
-        # pick CAS with max total annotations
         max_total = 0
         best = {}
         for cdict in counts_list:
@@ -695,46 +774,51 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
                 best = cdict
         return best
 
-    # Iterate over all documents
     for doc_name, annotator_map in annotations.items():
-        cas_list = list(annotator_map.values())
-        if not cas_list:
+        cas_stats_list = list(annotator_map.values())
+        if not cas_stats_list:
             continue
 
-        # Get per-annotator counts
-        per_cas_counts = [count_annotations(cas) for cas in cas_list]
-
-        # Combine depending on mode
         if aggregation_mode == "Sum":
-            combined_counts = merge_counts(per_cas_counts)
+            combined_counts = merge_counts(cas_stats_list)
         elif aggregation_mode == "Average":
-            combined_counts = average_counts(per_cas_counts)
+            combined_counts = average_counts(cas_stats_list)
         elif aggregation_mode == "Max":
-            combined_counts = max_counts(per_cas_counts)
+            combined_counts = max_counts(cas_stats_list)
         else:
-            combined_counts = merge_counts(per_cas_counts)
+            combined_counts = merge_counts(cas_stats_list)
 
-        # Aggregate into global type_count
+        # Apply SNOMED mapping at the aggregated per-document level for Concept type
+        if snomed_labels:
+            concept_counts = combined_counts.get("Concept")
+            if concept_counts:
+                mapped_features = defaultdict(int)
+                for raw_val, count in concept_counts["features"].items():
+                    label = snomed_labels.get(raw_val, raw_val)
+                    mapped_features[label] += count
+                concept_counts["features"] = mapped_features
+
         for tname, vals in combined_counts.items():
             if tname not in type_count:
                 type_count[tname] = {"total": 0, "documents": {}, "features": {}}
             type_count[tname]["total"] += vals["total"]
             type_count[tname]["documents"][doc_name] = vals["total"]
 
-            # Merge feature counts
             for feat_val, feat_count in vals["features"].items():
                 if feat_val not in type_count[tname]["features"]:
                     type_count[tname]["features"][feat_val] = {}
                 type_count[tname]["features"][feat_val][doc_name] = feat_count
 
-    # Sort and clean
     for tname, tvals in type_count.items():
         tvals["features"] = dict(
             sorted(tvals["features"].items(), key=lambda x: sum(x[1].values()), reverse=True)
         )
-    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+    type_count = dict(
+        sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True)
+    )
 
     return type_count
+
 
 
 def export_data(project_data):
@@ -745,12 +829,6 @@ def export_data(project_data):
         project_data (dict): The data to be exported.
     """
     current_date = datetime.now().strftime("%Y_%m_%d")
-
-    # Get version information
-    version_info = get_project_info()
-    if version_info:
-        version, _ = version_info
-        project_data["dashboard_version"] = version
 
     output_directory = os.getenv("INCEPTION_OUTPUT_DIR")
 
@@ -949,6 +1027,8 @@ def plot_project_progress(project) -> None:
         "type_counts": output_type_counts,
         "aggregation_mode": st.session_state.get("aggregation_mode", "Sum"),
         "created": datetime.now().date().isoformat(),
+        "inception_version": project.get("inception_version"), 
+        "dashboard_version": get_project_info()[0] if get_project_info() else None,
     }
 
     data_sizes_docs = [
@@ -1066,45 +1146,52 @@ def plot_project_progress(project) -> None:
         main_traces += 1
 
     feature_buttons = []
+    max_features_per_type = 30  # limit feature drilldown size to improve performance
+
     for category, details in type_counts.items():
-        if len(details["features"]) >= 2:
-            category_start = total_feature_traces
-            for subcategory, value in details["features"].items():
-                # For PHI, value is a dict with per-document counts, for others it's a total
-                if isinstance(value, dict):
-                    total_value = sum(value.values())
-                else:
-                    total_value = value
-                
-                bar_chart.add_trace(
-                    go.Bar(
-                        y=[subcategory],
-                        x=[total_value],
-                        text=[total_value],
-                        textposition="auto",
-                        name=subcategory,
-                        visible=False,
-                        orientation="h",
-                        hoverinfo="x+y",
-                    )
+        features_items = list(details["features"].items())
+        if len(features_items) < 2:
+            continue
+
+        # Use only the top-N features (already sorted by frequency)
+        top_features = features_items[:max_features_per_type]
+
+        category_start = total_feature_traces
+        for subcategory, value in top_features:
+            # For PHI, value is a dict with per-document counts, for others it's a total
+            if isinstance(value, dict):
+                total_value = sum(value.values())
+            else:
+                total_value = value
+
+            bar_chart.add_trace(
+                go.Bar(
+                    y=[subcategory],
+                    x=[total_value],
+                    text=[total_value],
+                    textposition="auto",
+                    name=subcategory,
+                    visible=False,
+                    orientation="h",
+                    hoverinfo="x+y",
                 )
-                total_feature_traces += 1
-            
-            category_end = total_feature_traces
-            category_trace_mapping[category] = (category_start, category_end)
-
-            # Create visibility array: hide main traces, show only this category's feature traces
-            visibility = [False] * main_traces + [False] * total_feature_traces
-            for i in range(category_start, category_end):
-                visibility[main_traces + i] = True
-
-            feature_buttons.append(
-                {
-                    "args": [{"visible": visibility}],
-                    "label": category,
-                    "method": "update",
-                }
             )
+            total_feature_traces += 1
+
+        category_end = total_feature_traces
+        category_trace_mapping[category] = (category_start, category_end)
+
+        visibility = [False] * main_traces + [False] * total_feature_traces
+        for i in range(category_start, category_end):
+            visibility[main_traces + i] = True
+
+        feature_buttons.append(
+            {
+                "args": [{"visible": visibility}],
+                "label": category,
+                "method": "update",
+            }
+        )
 
     bar_chart_buttons = [
         {
@@ -1124,7 +1211,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=min(160 * len(type_counts), 500),
+        height=max(200, min(160 * len(type_counts), 500)),
         font=dict(size=18),
         legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
