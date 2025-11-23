@@ -39,6 +39,7 @@ import streamlit as st
 import toml
 from pycaprio import Pycaprio
 from rdflib.plugins.stores.sparqlstore import SPARQLStore
+from tqdm import tqdm
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -315,10 +316,11 @@ def read_dir(
     api_url: str = None,
     auth: tuple = None,
 ) -> list[dict]:
+
     projects = []
 
+    # Load excluded types once per read, not per CAS
     excluded_types = load_excluded_types()
-
 
     for file_name in os.listdir(dir_path):
         project_stem = file_name.split(".")[0]
@@ -331,9 +333,12 @@ def read_dir(
 
         try:
             with zipfile.ZipFile(file_path, "r") as zip_file:
+
                 # ---- Read project metadata ----
                 try:
-                    project_meta = json.loads(zip_file.read("exportedproject.json").decode("utf-8"))
+                    project_meta = json.loads(
+                        zip_file.read("exportedproject.json").decode("utf-8")
+                    )
                 except KeyError:
                     log.warning(f"No exportedproject.json found in {file_name}")
                     continue
@@ -347,12 +352,37 @@ def read_dir(
                 description = project_meta.get("description", "")
                 project_tags = (
                     [translate_tag(word.strip("#")) for word in description.split() if word.startswith("#")]
-                    if description
-                    else []
+                    if description else []
+                )
+
+                # ---- PRECOUNT ALL CAS FILES FOR TQDM ----
+                all_cas_paths = []
+                for doc in project_documents:
+                    doc_name = doc["name"]
+                    state = doc.get("state", "")
+                    folder_prefix = (
+                        f"curation/{doc_name}/"
+                        if state == "CURATION_FINISHED"
+                        else f"annotation/{doc_name}/"
+                    )
+                    for info in zip_file.infolist():
+                        if (
+                            info.filename.startswith(folder_prefix)
+                            and info.filename.endswith(".json")
+                            and not info.is_dir()
+                        ):
+                            all_cas_paths.append(info.filename)
+
+                total_cas_files = len(all_cas_paths)
+                log.info(f"Started processing {total_cas_files} CAS files in {file_name}")
+                pbar = tqdm(
+                    total=total_cas_files,
+                    desc="Processing CAS files",
+                    leave=True,
                 )
 
                 # ---- Prepare containers ----
-                annotations = {}          # now holds stats per annotator, not CAS
+                annotations = {}          # per-document → per-annotator → stats
                 used_snomed_ids = set()
 
                 # ---- Process each document ----
@@ -361,12 +391,14 @@ def read_dir(
                     state = doc.get("state", "")
                     annotations[doc_name] = {}
 
-                    # Pick correct folder depending on document state
+                    # Determine path (curation or annotation)
                     folder_prefix = (
-                        f"curation/{doc_name}/" if state == "CURATION_FINISHED" else f"annotation/{doc_name}/"
+                        f"curation/{doc_name}/"
+                        if state == "CURATION_FINISHED"
+                        else f"annotation/{doc_name}/"
                     )
 
-                    # Find all CAS JSON files under that path
+                    # Collect CAS JSON files
                     matching_files = [
                         info.filename
                         for info in zip_file.infolist()
@@ -374,14 +406,21 @@ def read_dir(
                         and info.filename.endswith(".json")
                         and not info.is_dir()
                     ]
+                    
+                    # Use INITIAL_CAS.json only if it is the *only* file
+                    if len(matching_files) > 1:
+                        matching_files = [p for p in matching_files if not p.endswith("INITIAL_CAS.json")]
 
                     if not matching_files:
-                        log.warning(f"No CAS found for {doc_name} in {file_name} ({folder_prefix})")
+                        log.warning(
+                            f"No CAS found for {doc_name} in {file_name} ({folder_prefix})"
+                        )
                         continue
 
-                    # Load all annotator CAS files, but keep only lightweight stats
+                    # ---- Load each CAS, compute stats, discard CAS ----
                     for cas_path in matching_files:
                         annotator_name = os.path.splitext(os.path.basename(cas_path))[0]
+
                         try:
                             with zip_file.open(cas_path) as cas_file:
                                 cas = cassis.load_cas_from_json(cas_file)
@@ -390,29 +429,38 @@ def read_dir(
                             annotations[doc_name][annotator_name] = cas_counts
                             used_snomed_ids.update(cas_snomed_ids)
 
-                            # Drop the CAS reference explicitly
+                            # Drop CAS immediately
                             del cas
 
                         except Exception as e:
                             log.warning(f"Failed to load {cas_path} from {file_name}: {e}")
-                            continue
 
+                        # Update tqdm
+                        pbar.update(1)
+
+                # ---- Done with project → close tqdm ----
+                pbar.close()
+
+                # ---- Fetch SNOMED mappings (API mode only) ----
                 snomed_label_map = {}
                 if mode == "manual":
                     log.info("SNOMED labels are not supported in manual mode")
+
                 elif mode == "api":
-                    # ---- Detect KB ----
                     kb_id = get_kb_id_from_project_meta(project_meta)
                     if kb_id:
                         log.info(f"Detected KB '{kb_id}' for project {file_name}")
                     else:
                         log.warning(f"No KB detected for project {file_name}")
 
-                    # ---- Fetch SNOMED semantic tags ----
                     if api_url and auth and kb_id and used_snomed_ids:
                         project_id = selected_projects_data[project_stem]
                         snomed_label_map = get_snomed_semantic_tag_map(
-                            api_url, project_id, kb_id, used_snomed_ids, auth=auth
+                            api_url,
+                            project_id,
+                            kb_id,
+                            used_snomed_ids,
+                            auth=auth,
                         )
                         log.info(
                             f"Fetched SNOMED labels for {len(snomed_label_map)} concepts in {file_name}"
@@ -424,10 +472,13 @@ def read_dir(
                         "name": file_name,
                         "tags": project_tags if project_tags else None,
                         "documents": project_documents,
-                        "annotations": annotations,
+                        "annotations": annotations,   # now stats only
                         "snomed_labels": snomed_label_map,
                     }
                 )
+
+            # Encourage cleanup
+            gc.collect()
 
         except Exception as e:
             log.error(f"Error processing {file_name}: {e}")
