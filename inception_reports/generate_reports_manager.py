@@ -39,7 +39,6 @@ import streamlit as st
 import toml
 from pycaprio import Pycaprio
 from rdflib.plugins.stores.sparqlstore import SPARQLStore
-from tqdm import tqdm
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -315,6 +314,7 @@ def read_dir(
     mode: str,
     api_url: str = None,
     auth: tuple = None,
+    progress_callback=None,
 ) -> list[dict]:
 
     projects = []
@@ -322,6 +322,57 @@ def read_dir(
     # Load excluded types once per read, not per CAS
     excluded_types = load_excluded_types()
 
+    # ---- Pre-count all CAS files across all selected projects (for global progress bar) ----
+    total_cas_overall = 0
+    for file_name in os.listdir(dir_path):
+        project_stem = file_name.split(".")[0]
+        if selected_projects_data and project_stem not in selected_projects_data:
+            continue
+
+        file_path = os.path.join(dir_path, file_name)
+        if not zipfile.is_zipfile(file_path):
+            continue
+
+        try:
+            with zipfile.ZipFile(file_path, "r") as zip_file:
+                try:
+                    project_meta = json.loads(
+                        zip_file.read("exportedproject.json").decode("utf-8")
+                    )
+                except KeyError:
+                    # If the project is malformed, skip it entirely
+                    continue
+
+                project_documents = project_meta.get("source_documents", [])
+                if not project_documents:
+                    continue
+
+                for doc in project_documents:
+                    doc_name = doc["name"]
+                    state = doc.get("state", "")
+                    folder_prefix = (
+                        f"curation/{doc_name}/"
+                        if state == "CURATION_FINISHED"
+                        else f"annotation/{doc_name}/"
+                    )
+                    for info in zip_file.infolist():
+                        if (
+                            info.filename.startswith(folder_prefix)
+                            and info.filename.endswith(".json")
+                            and not info.is_dir()
+                        ):
+                            total_cas_overall += 1
+        except Exception as e:
+            log.error(f"Error pre-counting CAS files in {file_name}: {e}")
+            continue
+
+    if progress_callback and total_cas_overall == 0:
+        # Inform the UI that there is nothing to process
+        progress_callback(0, 0, None, None)
+
+    processed_cas_overall = 0
+
+    # ---- Actual processing loop (per project) ----
     for file_name in os.listdir(dir_path):
         project_stem = file_name.split(".")[0]
         if selected_projects_data and project_stem not in selected_projects_data:
@@ -355,31 +406,7 @@ def read_dir(
                     if description else []
                 )
 
-                # ---- PRECOUNT ALL CAS FILES FOR TQDM ----
-                all_cas_paths = []
-                for doc in project_documents:
-                    doc_name = doc["name"]
-                    state = doc.get("state", "")
-                    folder_prefix = (
-                        f"curation/{doc_name}/"
-                        if state == "CURATION_FINISHED"
-                        else f"annotation/{doc_name}/"
-                    )
-                    for info in zip_file.infolist():
-                        if (
-                            info.filename.startswith(folder_prefix)
-                            and info.filename.endswith(".json")
-                            and not info.is_dir()
-                        ):
-                            all_cas_paths.append(info.filename)
-
-                total_cas_files = len(all_cas_paths)
-                log.info(f"Started processing {total_cas_files} CAS files in {file_name}")
-                pbar = tqdm(
-                    total=total_cas_files,
-                    desc="Processing CAS files",
-                    leave=True,
-                )
+                log.info(f"Started processing project {file_name}")
 
                 # ---- Prepare containers ----
                 annotations = {}          # per-document → per-annotator → stats
@@ -435,11 +462,15 @@ def read_dir(
                         except Exception as e:
                             log.warning(f"Failed to load {cas_path} from {file_name}: {e}")
 
-                        # Update tqdm
-                        pbar.update(1)
-
-                # ---- Done with project → close tqdm ----
-                pbar.close()
+                        # Update global UI progress
+                        processed_cas_overall += 1
+                        if progress_callback and total_cas_overall > 0:
+                            progress_callback(
+                                processed_cas_overall,
+                                total_cas_overall,
+                                current_project=project_stem,
+                                current_doc=doc_name,
+                            )
 
                 # ---- Fetch SNOMED mappings (API mode only) ----
                 snomed_label_map = {}
@@ -485,6 +516,10 @@ def read_dir(
             log.error(f"Error processing {file_name}: {e}")
             continue
 
+    # Ensure the progress bar ends at 100% in the UI
+    if progress_callback and total_cas_overall > 0:
+        progress_callback(total_cas_overall, total_cas_overall, None, None)
+
     # Explicitly trigger garbage collection just to make sure all resources are freed
     gc.collect()
     return projects
@@ -518,10 +553,46 @@ def login_to_inception(api_url, username, password):
     return False, None
 
 
-def select_method_to_import_data():
+def select_method_to_import_data(progress_container=None):
     """
     Allows the user to select a method to import data for generating reports.
     """
+
+    def init_progress():
+        """
+        Create a label + progress bar in the top-of-page container and return a
+        Streamlit-friendly progress callback.
+
+        Returns:
+            (progress_label, progress_bar, progress_callback)
+        """
+        if progress_container is None:
+            return None, None, None
+
+        container = progress_container.container()
+        progress_label = container.empty()
+        progress_bar = container.progress(0)
+
+        def progress_callback(done, total, current_project=None, current_doc=None):
+            if progress_label is None or progress_bar is None:
+                return
+
+            if total <= 0:
+                progress_label.text("No CAS files found to process.")
+                progress_bar.progress(0)
+                return
+
+            fraction = min(max(done / total, 0.0), 1.0)
+            percent = int(fraction * 100)
+            msg = f"Generating reports: {done}/{total} CAS files"
+            if current_project:
+                msg += f" • Project: {current_project}"
+            if current_doc:
+                msg += f" • Document: {current_doc}"
+            progress_label.text(msg)
+            progress_bar.progress(percent)
+
+        return progress_label, progress_bar, progress_callback
 
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=1
@@ -548,12 +619,19 @@ def select_method_to_import_data():
 
                 selected_projects = [f.name.split(".")[0] for f in uploaded_files]
 
+                progress_label, progress_bar, progress_callback = init_progress()
+
                 st.session_state["projects"] = read_dir(
                     dir_path=temp_dir,
                     selected_projects_data={name: -1 for name in selected_projects},
                     mode="manual",
+                    progress_callback=progress_callback,
                 )
                 st.session_state["projects_folder"] = temp_dir
+
+                if progress_label is not None and progress_bar is not None:
+                    progress_label.text("Report generation complete.")
+                    progress_bar.progress(100)
 
             st.session_state["method"] = "Manually"
             button = False
@@ -597,30 +675,62 @@ def select_method_to_import_data():
             selected_projects_data = {}
             button = st.sidebar.button("Generate Reports")
             if button:
-                for project_id, is_selected in selected_projects.items():
-                    if is_selected:
-                        project = inception_client.api.project(project_id)
-                        selected_projects_data[project.project_name] = project_id
-                        file_path = f"{projects_folder}/{project.project_name}.zip"
-                        st.sidebar.write(f"Importing project: {project.project_name}")
-                        log.info(
-                            f"Importing project {project.project_name} into {file_path}"
-                        )
-                        project_export = inception_client.api.export_project(
-                            project, "jsoncas"
-                        )
-                        with open(file_path, "wb") as f:
-                            f.write(project_export)
-                        log.debug("Import Success")
+                # Determine which projects are actually selected
+                selected_ids = [pid for pid, is_selected in selected_projects.items() if is_selected]
+                if not selected_ids:
+                    st.sidebar.warning("Please select at least one project to generate reports.")
+                    return
+
+                # --- TOP-OF-PAGE SPINNER + STATUS TEXT FOR EXPORT PHASE ---
+                if progress_container is not None:
+                    export_container = progress_container.container()
+                else:
+                    export_container = st.container()
+
+                with export_container:
+                    with st.spinner("Exporting selected projects from INCEpTION…"):
+
+                        for _, project_id in enumerate(selected_ids, start=1):
+                            project = inception_client.api.project(project_id)
+                            project_name = project.project_name
+
+                            selected_projects_data[project_name] = project_id
+                            file_path = f"{projects_folder}/{project_name}.zip"
+
+                            st.sidebar.write(f"Importing project: {project_name}")
+                            log.info(
+                                f"Importing project {project_name} into {file_path}"
+                            )
+
+                            project_export = inception_client.api.export_project(
+                                project, "jsoncas"
+                            )
+                            with open(file_path, "wb") as f:
+                                f.write(project_export)
+                            log.debug("Import Success")
+
+                # Clear spinner/status area before showing the CAS progress bar
+                if progress_container is not None:
+                    progress_container.empty()
 
                 st.session_state["method"] = "API"
+
+                # Now initialize the CAS-processing progress bar at the top
+                progress_label, progress_bar, progress_callback = init_progress()
+
                 st.session_state["projects"] = read_dir(
                     dir_path=projects_folder,
                     selected_projects_data=selected_projects_data,
                     api_url=api_url,
                     auth=(username, password),
                     mode="api",
+                    progress_callback=progress_callback,
                 )
+
+                if progress_label is not None and progress_bar is not None:
+                    progress_label.text("Report generation complete.")
+                    progress_bar.progress(100)
+
 
     # --- AGGREGATION MODE SELECTOR (always visible once projects exist) ---
     if "projects" in st.session_state or "projects_folder" in st.session_state:
@@ -646,6 +756,7 @@ def select_method_to_import_data():
         help="If checked, the annotation type bar chart will only include documents whose state is CURATION_FINISHED.",
     )
     st.session_state["show_only_curated"] = show_only_curated
+
 
 
 
@@ -1255,7 +1366,8 @@ def main():
     )
     st.title("INCEpTION Reporting Dashboard")
     st.write("<hr>", unsafe_allow_html=True)
-    select_method_to_import_data()
+    progress_container = st.empty()
+    select_method_to_import_data(progress_container=progress_container)
 
     generated_reports = []
     if "method" in st.session_state and "projects" in st.session_state:
