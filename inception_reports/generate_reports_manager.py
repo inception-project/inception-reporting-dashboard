@@ -830,12 +830,6 @@ def export_data(project_data):
     """
     current_date = datetime.now().strftime("%Y_%m_%d")
 
-    # Get version information
-    version_info = get_project_info()
-    if version_info:
-        version, _ = version_info
-        project_data["dashboard_version"] = version
-
     output_directory = os.getenv("INCEPTION_OUTPUT_DIR")
 
     if output_directory is None:
