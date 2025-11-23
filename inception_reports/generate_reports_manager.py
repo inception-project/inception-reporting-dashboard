@@ -679,8 +679,11 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
     Calculate the count of each annotation type across all documents.
 
     Args:
-        annotations (dict): {doc_name: {annotator_name: cas}} structure.
-        snomed_labels (dict): Optional mapping for SNOMED concept IDs.
+        annotations (dict):
+            {doc_name: {annotator_name: cas_stats}}
+            where cas_stats is:
+                {type_name: {'total': int, 'features': {value: count}}}
+        snomed_labels (dict): Optional mapping for SNOMED concept IDs -> semantic tag.
         aggregation_mode (str): One of "Sum", "Average", or "Max".
 
     Returns:
@@ -688,45 +691,7 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
     """
 
     type_count = {}
-    excluded_types = load_excluded_types()
 
-    # Helper function to count annotations within a single CAS
-    def count_annotations(cas):
-        counts = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
-        try:
-            layer_defs = cas.select("de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition")
-        except Exception:
-            layer_defs = []
-
-        for t in cas.typesystem.get_types():
-            if t.name in excluded_types:
-                continue
-
-            annotations_in_type = list(cas.select(t.name))
-            if not annotations_in_type:
-                continue
-
-            type_name = find_element_by_name(layer_defs, t.name)
-            counts[type_name]["total"] += len(annotations_in_type)
-
-            for feature in t.all_features:
-                if feature.name in {
-                    cassis.typesystem.FEATURE_BASE_NAME_END,
-                    cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
-                    cassis.typesystem.FEATURE_BASE_NAME_SOFA,
-                    "literal",
-                }:
-                    continue
-                for item in annotations_in_type:
-                    value = item.get(feature.name)
-                    if value is None:
-                        continue
-                    if t.name == "gemtex.Concept" and feature.name == "id":
-                        value = snomed_labels.get(value, value)
-                    counts[type_name]["features"][value] += 1
-        return counts
-
-    # Helper: merge counts from multiple CASes
     def merge_counts(counts_list):
         merged = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
         for cdict in counts_list:
@@ -740,14 +705,14 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
         if not counts_list:
             return {}
         merged = merge_counts(counts_list)
+        n = len(counts_list)
         for t, vals in merged.items():
-            vals["total"] = round(vals["total"] / len(counts_list))
-            for feat in vals["features"]:
-                vals["features"][feat] = round(vals["features"][feat] / len(counts_list))
+            vals["total"] = round(vals["total"] / n)
+            for feat in list(vals["features"].keys()):
+                vals["features"][feat] = round(vals["features"][feat] / n)
         return merged
 
     def max_counts(counts_list):
-        # pick CAS with max total annotations
         max_total = 0
         best = {}
         for cdict in counts_list:
@@ -757,46 +722,51 @@ def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
                 best = cdict
         return best
 
-    # Iterate over all documents
     for doc_name, annotator_map in annotations.items():
-        cas_list = list(annotator_map.values())
-        if not cas_list:
+        cas_stats_list = list(annotator_map.values())
+        if not cas_stats_list:
             continue
 
-        # Get per-annotator counts
-        per_cas_counts = [count_annotations(cas) for cas in cas_list]
-
-        # Combine depending on mode
         if aggregation_mode == "Sum":
-            combined_counts = merge_counts(per_cas_counts)
+            combined_counts = merge_counts(cas_stats_list)
         elif aggregation_mode == "Average":
-            combined_counts = average_counts(per_cas_counts)
+            combined_counts = average_counts(cas_stats_list)
         elif aggregation_mode == "Max":
-            combined_counts = max_counts(per_cas_counts)
+            combined_counts = max_counts(cas_stats_list)
         else:
-            combined_counts = merge_counts(per_cas_counts)
+            combined_counts = merge_counts(cas_stats_list)
 
-        # Aggregate into global type_count
+        # Apply SNOMED mapping at the aggregated per-document level for Concept type
+        if snomed_labels:
+            concept_counts = combined_counts.get("Concept")
+            if concept_counts:
+                mapped_features = defaultdict(int)
+                for raw_val, count in concept_counts["features"].items():
+                    label = snomed_labels.get(raw_val, raw_val)
+                    mapped_features[label] += count
+                concept_counts["features"] = mapped_features
+
         for tname, vals in combined_counts.items():
             if tname not in type_count:
                 type_count[tname] = {"total": 0, "documents": {}, "features": {}}
             type_count[tname]["total"] += vals["total"]
             type_count[tname]["documents"][doc_name] = vals["total"]
 
-            # Merge feature counts
             for feat_val, feat_count in vals["features"].items():
                 if feat_val not in type_count[tname]["features"]:
                     type_count[tname]["features"][feat_val] = {}
                 type_count[tname]["features"][feat_val][doc_name] = feat_count
 
-    # Sort and clean
     for tname, tvals in type_count.items():
         tvals["features"] = dict(
             sorted(tvals["features"].items(), key=lambda x: sum(x[1].values()), reverse=True)
         )
-    type_count = dict(sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True))
+    type_count = dict(
+        sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True)
+    )
 
     return type_count
+
 
 
 def export_data(project_data):
