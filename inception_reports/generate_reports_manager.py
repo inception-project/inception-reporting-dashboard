@@ -1098,45 +1098,52 @@ def plot_project_progress(project) -> None:
         main_traces += 1
 
     feature_buttons = []
+    max_features_per_type = 30  # limit feature drilldown size to improve performance
+
     for category, details in type_counts.items():
-        if len(details["features"]) >= 2:
-            category_start = total_feature_traces
-            for subcategory, value in details["features"].items():
-                # For PHI, value is a dict with per-document counts, for others it's a total
-                if isinstance(value, dict):
-                    total_value = sum(value.values())
-                else:
-                    total_value = value
-                
-                bar_chart.add_trace(
-                    go.Bar(
-                        y=[subcategory],
-                        x=[total_value],
-                        text=[total_value],
-                        textposition="auto",
-                        name=subcategory,
-                        visible=False,
-                        orientation="h",
-                        hoverinfo="x+y",
-                    )
+        features_items = list(details["features"].items())
+        if len(features_items) < 2:
+            continue
+
+        # Use only the top-N features (already sorted by frequency)
+        top_features = features_items[:max_features_per_type]
+
+        category_start = total_feature_traces
+        for subcategory, value in top_features:
+            # For PHI, value is a dict with per-document counts, for others it's a total
+            if isinstance(value, dict):
+                total_value = sum(value.values())
+            else:
+                total_value = value
+
+            bar_chart.add_trace(
+                go.Bar(
+                    y=[subcategory],
+                    x=[total_value],
+                    text=[total_value],
+                    textposition="auto",
+                    name=subcategory,
+                    visible=False,
+                    orientation="h",
+                    hoverinfo="x+y",
                 )
-                total_feature_traces += 1
-            
-            category_end = total_feature_traces
-            category_trace_mapping[category] = (category_start, category_end)
-
-            # Create visibility array: hide main traces, show only this category's feature traces
-            visibility = [False] * main_traces + [False] * total_feature_traces
-            for i in range(category_start, category_end):
-                visibility[main_traces + i] = True
-
-            feature_buttons.append(
-                {
-                    "args": [{"visible": visibility}],
-                    "label": category,
-                    "method": "update",
-                }
             )
+            total_feature_traces += 1
+
+        category_end = total_feature_traces
+        category_trace_mapping[category] = (category_start, category_end)
+
+        visibility = [False] * main_traces + [False] * total_feature_traces
+        for i in range(category_start, category_end):
+            visibility[main_traces + i] = True
+
+        feature_buttons.append(
+            {
+                "args": [{"visible": visibility}],
+                "label": category,
+                "method": "update",
+            }
+        )
 
     bar_chart_buttons = [
         {
