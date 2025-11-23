@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import copy
+import gc
 import importlib.resources
 import io
 import json
@@ -610,6 +611,63 @@ def find_element_by_name(element_list, name):
         if element.name == name:
             return element.uiName
     return name.split(".")[-1]
+
+def compute_cas_stats(cas, excluded_types):
+    """
+    Compute lightweight stats for a single CAS and return:
+      - counts: {type_ui_name: {"total": int, "features": {value: count}}}
+      - snomed_ids: set of SNOMED IDs seen in gemtex.Concept/id
+
+    This avoids keeping the CAS object around after counting.
+    """
+    counts = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
+    snomed_ids = set()
+
+    skip_features = {
+        cassis.typesystem.FEATURE_BASE_NAME_END,
+        cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
+        cassis.typesystem.FEATURE_BASE_NAME_SOFA,
+        "literal",
+    }
+
+    try:
+        layer_defs = cas.select(
+            "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
+        )
+    except Exception:
+        layer_defs = []
+
+    for t in cas.typesystem.get_types():
+        if t.name in excluded_types:
+            continue
+
+        relevant_features = [
+            f for f in t.all_features if f.name not in skip_features
+        ]
+        if not relevant_features:
+            continue
+
+        is_concept_type = t.name == "gemtex.Concept"
+        has_any = False
+        type_entry = None
+
+        for item in cas.select(t.name):
+            if not has_any:
+                type_name = find_element_by_name(layer_defs, t.name)
+                type_entry = counts[type_name]
+                has_any = True
+
+            type_entry["total"] += 1
+
+            for feature in relevant_features:
+                value = item.get(feature.name)
+                if value is None:
+                    continue
+                if is_concept_type and feature.name == "id":
+                    snomed_ids.add(value)
+                type_entry["features"][value] += 1
+
+    return counts, snomed_ids
 
 
 def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
