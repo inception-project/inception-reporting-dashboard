@@ -85,19 +85,18 @@ def test_export_data(tmp_path, monkeypatch):
     """
     Ensures:
       - export_data() writes a JSON file into INCEPTION_OUTPUT_DIR
-      - Injects dashboard_version from get_project_info()
       - Filename includes today's date
     """
 
-    # Mock version info
+    # Mock version info (should no longer be used by export_data)
     from inception_reports import generate_reports_manager as gm
 
-    monkeypatch.setattr(gm, "get_project_info", lambda: ("9.9.9", "package"))
-
+    # dashboard_version should be provided upstream
     project_data = {
         "project_name": "projX",
         "project_tags": ["tag1"],
         "doc_categories": {"NEW": 1},
+        "dashboard_version": "9.9.9",
         "created": "2024-01-01",
     }
 
@@ -114,9 +113,9 @@ def test_export_data(tmp_path, monkeypatch):
     with open(outfile) as f:
         exported = json.load(f)
 
-    # Check version injected
+    # dashboard_version MUST remain whatever was passed in
     assert exported["dashboard_version"] == "9.9.9"
 
-    # Check all original fields preserved
+    # Check all fields preserved
     for key, value in project_data.items():
         assert exported[key] == value
