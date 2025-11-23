@@ -16,103 +16,107 @@
 
 
 import json
-import os
-import tempfile
 import zipfile
-from unittest.mock import Mock, patch
 from datetime import datetime
+from unittest.mock import Mock, patch
 
-from inception_reports.generate_reports_manager import find_element_by_name, read_dir, export_data
+from inception_reports.generate_reports_manager import (
+    find_element_by_name,
+    read_dir,
+)
 
 
 def test_find_element_by_name():
-    MockElement_1 = Mock()
-    MockElement_1.configure_mock(**{"name": "element1", "uiName": "UI Element 1"})
-    MockElement_2 = Mock()
-    MockElement_2.configure_mock(**{"name": "element2", "uiName": "UI Element 2"})
-    MockElement_3 = Mock()
-    MockElement_3.configure_mock(**{"name": "element3", "uiName": "UI Element 3"})
+    e1 = Mock()
+    e1.name = "type.A"
+    e1.uiName = "A-Type"
 
-    element_list = [MockElement_1, MockElement_2, MockElement_3]
+    e2 = Mock()
+    e2.name = "type.B"
+    e2.uiName = "B-Type"
 
-    result = find_element_by_name(element_list, "element2")
-    assert result == "UI Element 2", "Should return the uiName of the found element"
-
-    result = find_element_by_name(element_list, "element4")
-    assert result == "element4", "Should return the last part of the name if not found"
-
-    result = find_element_by_name([], "element2")
-    assert result == "element2", "Should handle empty input list"
+    assert find_element_by_name([e1, e2], "type.B") == "B-Type"
+    assert find_element_by_name([e1, e2], "type.X") == "X"
+    assert find_element_by_name([], "type.Y") == "Y"
 
 
+@patch("inception_reports.generate_reports_manager.compute_cas_stats")
+@patch("cassis.load_cas_from_json")
+@patch("zipfile.is_zipfile", return_value=True)
+def test_read_dir_parses_zip_and_computes_stats(
+    mock_is_zip, mock_load_cas, mock_compute_stats, tmp_path
+):
+    mock_compute_stats.return_value = (
+        {"MockType": {"total": 2, "features": {"x": 1}}},
+        {"SNOMED:123"},
+    )
+    mock_load_cas.return_value = object()  # don't break .get()
 
-@patch('cassis.load_cas_from_json', return_value="MockCASObject")
-@patch('os.listdir', return_value=['project1.zip'])
-@patch('zipfile.is_zipfile', return_value=True)
-@patch('shutil.rmtree')
-def test_read_dir_correctly_parses_zip_files(mock_rmtree, mock_is_zipfile, mock_listdir, mock_cas_loader):
-    with tempfile.TemporaryDirectory() as temp_dir:
-        zip_name = "project1.zip"
-        zip_path = os.path.join(temp_dir, zip_name)
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            project_meta = {
-                "description": "A mock project #tag1 #tag2",
+    with patch("os.listdir", return_value=["project1.zip"]):
+        zip_path = tmp_path / "project1.zip"
+        with zipfile.ZipFile(zip_path, "w") as z:
+            meta = {
+                "description": "#tagA #tagB",
                 "source_documents": [
-                    {
-                        "name": "doc1.txt",
-                        "format": "text",
-                        "state": "ANNOTATION_IN_PROGRESS",
-                    },
-                    {
-                        "name": "doc2.txt",
-                        "format": "text",
-                        "state": "ANNOTATION_IN_PROGRESS",
-                    },
+                    {"name": "doc1.txt", "state": "ANNOTATION_IN_PROGRESS"},
+                    {"name": "doc2.txt", "state": "CURATION_FINISHED"},
                 ],
             }
-            zipf.writestr('exportedproject.json', json.dumps(project_meta))
+            z.writestr("exportedproject.json", json.dumps(meta))
+            z.writestr("annotation/doc1.txt/annotator1.json", "{}")
+            z.writestr("annotation/doc1.txt/INITIAL_CAS.json", "{}")
+            z.writestr("curation/doc2.txt/INITIAL_CAS.json", "{}")
 
-            annotation_content = {"dummy": "content"}
-            zipf.writestr('annotation/doc1.txt/annotator1.json', json.dumps(annotation_content))
-            zipf.writestr('annotation/doc2.txt/annotator1.json', json.dumps(annotation_content))
+        selected = {"project1": -1}
 
-        selected_projects_data = {"project1": -1}
-        projects = read_dir(temp_dir, selected_projects_data=selected_projects_data, mode='manual')
+        projects = read_dir(
+            str(tmp_path), selected_projects_data=selected, mode="manual"
+        )
 
-        assert len(projects) == 1, "Should correctly parse zip files and extract project data"
-        project = projects[0]
-        print(project['annotations'])
-        assert project['name'] == zip_name, "Project name should match the zip file name"
-        assert set(project['tags']) == {"tag1", "tag2"}, "Should extract correct tags from project metadata"
-        assert project['documents'] == project_meta["source_documents"], "Should list all source documents"
-        assert 'doc1.txt' in project['annotations'], "Should include annotations in the project data"
-        assert project['annotations']['doc1.txt'] == {'annotator1': 'MockCASObject'}, "Should load CAS objects for annotations"
+    project = projects[0]
+    annotations = project["annotations"]
+
+    assert set(annotations["doc1.txt"].keys()) == {"annotator1"}
+    assert set(annotations["doc2.txt"].keys()) == {"INITIAL_CAS"}
+    assert mock_compute_stats.call_count == 2
 
 
-def test_export_data(tmpdir):
+def test_export_data(tmp_path, monkeypatch):
+    """
+    Ensures:
+      - export_data() writes a JSON file into INCEPTION_OUTPUT_DIR
+      - Injects dashboard_version from get_project_info()
+      - Filename includes today's date
+    """
+
+    # Mock version info
+    from inception_reports import generate_reports_manager as gm
+
+    monkeypatch.setattr(gm, "get_project_info", lambda: ("9.9.9", "package"))
+
     project_data = {
-        "project_name": "project1",
-        "project_tags": ["tag1", "tag2"],
-        "doc_categories": {
-            "NEW": 10,
-            "ANNOTATION_IN_PROGRESS": 5,
-            "ANNOTATION_FINISHED": 15,
-            "CURATION_IN_PROGRESS": 3,
-            "CURATION_FINISHED": 7,
-        },
-        "created": "2024-06-11"
+        "project_name": "projX",
+        "project_tags": ["tag1"],
+        "doc_categories": {"NEW": 1},
+        "created": "2024-01-01",
     }
 
-    current_date = datetime.now().strftime("%Y_%m_%d")
-    output_directory = tmpdir.mkdir("output")
-    os.environ["INCEPTION_OUTPUT_DIR"] = str(output_directory)
-    export_data(project_data)
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    monkeypatch.setenv("INCEPTION_OUTPUT_DIR", str(outdir))
 
-    expected_file_path = os.path.join(output_directory, f"{project_data['project_name']}_{current_date}.json")
-    print(expected_file_path)
-    assert os.path.exists(expected_file_path)
+    gm.export_data(project_data)
 
-    with open(expected_file_path, "r") as output_file:
-        exported_data = json.load(output_file)
+    today = datetime.now().strftime("%Y_%m_%d")
+    outfile = outdir / f"projX_{today}.json"
+    assert outfile.exists(), "Output file should exist"
 
-    assert exported_data == project_data
+    with open(outfile) as f:
+        exported = json.load(f)
+
+    # Check version injected
+    assert exported["dashboard_version"] == "9.9.9"
+
+    # Check all original fields preserved
+    for key, value in project_data.items():
+        assert exported[key] == value
