@@ -472,8 +472,9 @@ def read_dir(
                         "name": file_name,
                         "tags": project_tags if project_tags else None,
                         "documents": project_documents,
-                        "annotations": annotations,   # now stats only
+                        "annotations": annotations,
                         "snomed_labels": snomed_label_map,
+                        "inception_version": project_meta.get("application_version", "Older than 38.4"),
                     }
                 )
 
@@ -1032,6 +1033,8 @@ def plot_project_progress(project) -> None:
         "type_counts": output_type_counts,
         "aggregation_mode": st.session_state.get("aggregation_mode", "Sum"),
         "created": datetime.now().date().isoformat(),
+        "inception_version": project.get("inception_version"), 
+        "dashboard_version": get_project_info()[0] if get_project_info() else None,
     }
 
     data_sizes_docs = [
@@ -1214,7 +1217,7 @@ def plot_project_progress(project) -> None:
         ),
         xaxis_title="Number of Annotations",
         barmode="overlay",
-        height=min(160 * len(type_counts), 500),
+        height=max(200, min(160 * len(type_counts), 500)),
         font=dict(size=18),
         legend=dict(font=dict(size=10)),
         paper_bgcolor="rgba(0,0,0,0)",
