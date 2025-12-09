@@ -23,7 +23,9 @@ import logging
 import os
 import re
 import shutil
+import ssl
 import time
+import urllib.request
 import zipfile
 from collections import defaultdict
 from datetime import datetime
@@ -35,6 +37,8 @@ import pkg_resources
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 import streamlit as st
 import toml
 from pycaprio import Pycaprio
@@ -208,6 +212,103 @@ def batched(iterable, n):
     while batch := list(islice(it, n)):
         yield batch
 
+class CustomSSLAdapter(HTTPAdapter):
+    """
+    Custom HTTPAdapter for requests that handles SSL verification with custom CA bundles.
+    """
+    def __init__(self, ca_bundle: str = None, verify_ssl: bool = True, **kwargs):
+        self.ca_bundle = ca_bundle
+        self.verify_ssl = verify_ssl
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        ca_bundle = getattr(self, 'ca_bundle', None)
+        verify_ssl = getattr(self, 'verify_ssl', True)
+
+        if not verify_ssl:
+            # Disable SSL verification
+            ctx = create_urllib3_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            kwargs["ssl_context"] = ctx
+        elif ca_bundle:
+            # Use custom CA bundle
+            ctx = create_urllib3_context()
+            ctx.load_verify_locations(cafile=ca_bundle)
+            kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        ca_bundle = getattr(self, 'ca_bundle', None)
+        verify_ssl = getattr(self, 'verify_ssl', True)
+
+        if not verify_ssl:
+            # Disable SSL verification
+            ctx = create_urllib3_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            proxy_kwargs["ssl_context"] = ctx
+        elif ca_bundle:
+            # Use custom CA bundle
+            ctx = create_urllib3_context()
+            ctx.load_verify_locations(cafile=ca_bundle)
+            proxy_kwargs["ssl_context"] = ctx
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+
+def create_ssl_session(ca_bundle: str = None, verify_ssl: bool = True):
+    """
+    Create a requests session with proper SSL handling.
+
+    Args:
+        ca_bundle: Path to a custom CA certificate file
+        verify_ssl: Whether to verify SSL certificates
+
+    Returns:
+        requests.Session: Configured session with SSL handling
+    """
+    session = requests.Session()
+    adapter = CustomSSLAdapter(ca_bundle=ca_bundle, verify_ssl=verify_ssl)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    # Set verify parameter for requests
+    if isinstance(verify_ssl, bool):
+        session.verify = verify_ssl
+
+    return session
+
+
+def configure_ssl_context(ca_bundle: str = None, verify_ssl: bool = True) -> None:
+    """
+    Configure global SSL context for urllib to handle self-signed certificates. This also sets the certificates for the SPARQL Queries.
+
+    Args:
+        ca_bundle: Path to a custom CA certificate file
+        verify_ssl: Whether to verify SSL certificates
+    """
+    try:
+        if not verify_ssl:
+            # Disable SSL verification
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+        elif ca_bundle:
+            # Create SSL context with custom CA bundle
+            ssl_context = ssl.create_default_context()
+            ssl_context.load_verify_locations(cafile=ca_bundle)
+        else:
+            # Use default SSL context - system trusted CAs
+            ssl_context = ssl.create_default_context()
+
+        # Install the custom HTTPS handler
+        https_handler = urllib.request.HTTPSHandler(context=ssl_context)
+        opener = urllib.request.build_opener(https_handler)
+        urllib.request.install_opener(opener)
+    except Exception as e:
+        log.error(f"Failed to configure SSL context: {e}", exc_info=True)
+
+
 def get_snomed_semantic_tag_map(
     base_url: str,
     project_id: int,
@@ -215,6 +316,8 @@ def get_snomed_semantic_tag_map(
     snomed_ids: set,
     auth: tuple = None,
     batch_size: int = 50,
+    ca_bundle: str = None,
+    verify_ssl: bool = True,
 ) -> dict:
     """
     Query the INCEpTION SPARQL endpoint to retrieve SNOMED semantic tags
@@ -223,6 +326,8 @@ def get_snomed_semantic_tag_map(
     Returns:
         dict[str, str]: Mapping of full SNOMED URI -> semantic tag (e.g., "disorder").
     """
+    # Configure SSL context for SPARQL queries
+    configure_ssl_context(ca_bundle=ca_bundle, verify_ssl=verify_ssl)
 
     # Ensure scheme is present
     if not base_url.startswith(("http://", "https://")):
@@ -234,6 +339,9 @@ def get_snomed_semantic_tag_map(
 
     semantic_map = {}
     paren_pattern = re.compile(r'\(([^)]+)\)')
+
+    # Create a custom session with SSL handling for SPARQL queries
+    session = create_ssl_session(ca_bundle=ca_bundle, verify_ssl=verify_ssl)
 
     for batch in batched(snomed_ids, batch_size):
         values_clause = "\n    ".join(f"<{uri}>" for uri in batch)
@@ -253,6 +361,7 @@ def get_snomed_semantic_tag_map(
                 auth=auth,
                 returnFormat="xml",
                 headers=headers,
+                httpsession=session,
             )
             results = store.query(query)
 
@@ -315,6 +424,8 @@ def read_dir(
     api_url: str = None,
     auth: tuple = None,
     progress_callback=None,
+    ca_bundle: str = None,
+    verify_ssl: bool = True,
 ) -> list[dict]:
 
     projects = []
@@ -492,6 +603,8 @@ def read_dir(
                             kb_id,
                             used_snomed_ids,
                             auth=auth,
+                            ca_bundle=ca_bundle,
+                            verify_ssl=verify_ssl
                         )
                         log.info(
                             f"Fetched SNOMED labels for {len(snomed_label_map)} concepts in {file_name}"
@@ -525,7 +638,7 @@ def read_dir(
     return projects
 
 
-def login_to_inception(api_url, username, password):
+def login_to_inception(api_url, username, password, ca_bundle=None, verify_ssl=True):
     """
     Logs in to the Inception API using the provided API URL, username, and password.
 
@@ -533,6 +646,10 @@ def login_to_inception(api_url, username, password):
         api_url (str): The URL of the Inception API.
         username (str): The username for authentication.
         password (str): The password for authentication.
+        ca_bundle (str, optional): Path to a custom CA certificate file. Defaults to None.
+        verify_ssl (bool): SSL verification behavior:
+            - True (default): Verify SSL certificates using system CAs + ca_bundle if provided
+            - False: Disable SSL verification
 
     Returns:
         tuple: A tuple containing a boolean value indicating whether the login was successful and an instance of the Inception client.
@@ -542,7 +659,7 @@ def login_to_inception(api_url, username, password):
         api_url = f"http://{api_url}"
     button = st.sidebar.button("Login")
     if button:
-        inception_client = Pycaprio(api_url, (username, password))
+        inception_client = Pycaprio(api_url, (username, password), ca_bundle=ca_bundle, verify=verify_ssl)
         try:
             inception_client.api.projects()
             st.sidebar.success("Login successful ✅")
@@ -649,9 +766,14 @@ def select_method_to_import_data(progress_container=None):
         inception_status = st.session_state.get("inception_status", False)
         inception_client = st.session_state.get("inception_client", None)
 
+        # Get certificate configuration from environment variables
+        ca_bundle = os.getenv("INCEPTION_CA_BUNDLE", None)
+        verify_ssl_str = os.getenv("INCEPTION_VERIFY_SSL", "true")
+        verify_ssl = verify_ssl_str.lower() != "false"
+
         if not inception_status:
             inception_status, inception_client = login_to_inception(
-                api_url, username, password
+                api_url, username, password, ca_bundle=ca_bundle, verify_ssl=verify_ssl
             )
             st.session_state["inception_status"] = inception_status
             st.session_state["inception_client"] = inception_client
@@ -725,6 +847,8 @@ def select_method_to_import_data(progress_container=None):
                     auth=(username, password),
                     mode="api",
                     progress_callback=progress_callback,
+                    ca_bundle=ca_bundle,
+                    verify_ssl=verify_ssl,
                 )
 
                 if progress_label is not None and progress_bar is not None:

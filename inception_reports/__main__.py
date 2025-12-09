@@ -87,6 +87,21 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level",
     )
+
+    parser.add_argument(
+        "--ca-bundle",
+        help="Path to a custom CA certificate file to trust. "
+        "Recommended for self-signed certificates.",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--verify-ssl",
+        choices=["true", "false"],
+        default="true",
+        help="Enable or disable SSL verification. Set to 'false' to disable verification.",
+    )
+
     args = parser.parse_args()
 
     setup_logging(args.logger)
@@ -95,6 +110,14 @@ def main():
     if args.output:
         os.environ["INCEPTION_OUTPUT_DIR"] = args.output
         print(f"Output directory set to: {args.output}")
+
+    if args.ca_bundle:
+        os.environ["INCEPTION_CA_BUNDLE"] = args.ca_bundle
+        print(f"CA bundle path set to: {args.ca_bundle}")
+
+    os.environ["INCEPTION_VERIFY_SSL"] = args.verify_ssl
+    if args.verify_ssl == "false":
+        print("SSL verification is disabled")
 
     if args.manager:
         log.info("STARTING INCEpTION Reporting Dashboard - Manager")
