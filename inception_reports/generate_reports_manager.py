@@ -39,6 +39,7 @@ import streamlit as st
 import toml
 from pycaprio import Pycaprio
 from rdflib.plugins.stores.sparqlstore import SPARQLStore
+from inception_reports.dashboard_version import DASHBOARD_VERSION
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -98,17 +99,7 @@ def startup():
 
 
 def get_project_info():
-    try:
-        pyproject_path = os.path.join(os.path.dirname(__file__), "..", "pyproject.toml")
-        with open(pyproject_path, "r") as f:
-            pyproject_data = toml.load(f)
-        version = pyproject_data["project"].get("version")
-        name = pyproject_data["project"].get("name")
-        if version and name:
-            return version, name
-        return None
-    except (FileNotFoundError, KeyError):
-        return None
+    return DASHBOARD_VERSION
 
 
 def check_package_version(current_version, package_name):
