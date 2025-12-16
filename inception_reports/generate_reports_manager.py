@@ -36,7 +36,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import requests
 import streamlit as st
-import toml
 from pycaprio import Pycaprio
 from rdflib.plugins.stores.sparqlstore import SPARQLStore
 from inception_reports.dashboard_version import DASHBOARD_VERSION
