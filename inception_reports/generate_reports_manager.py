@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import shutil
+from struct import pack
 import time
 import zipfile
 from collections import defaultdict
@@ -87,7 +88,8 @@ def startup():
 
     project_info = get_project_info()
     if project_info:
-        current_version, package_name = project_info
+        current_version = project_info
+        package_name = "inception-reports"
         latest_version = check_package_version(current_version, package_name)
         version_message = f"Dashboard Version: {current_version}"
         
