@@ -23,7 +23,6 @@ import logging
 import os
 import re
 import shutil
-from struct import pack
 import time
 import zipfile
 from collections import defaultdict
