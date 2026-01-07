@@ -1130,7 +1130,7 @@ def plot_project_progress(project) -> None:
         "aggregation_mode": st.session_state.get("aggregation_mode", "Sum"),
         "created": datetime.now().date().isoformat(),
         "inception_version": project.get("inception_version"), 
-        "dashboard_version": get_project_info()[0] if get_project_info() else None,
+        "dashboard_version": get_project_info() if get_project_info() else None,
     }
 
     data_sizes_docs = [
