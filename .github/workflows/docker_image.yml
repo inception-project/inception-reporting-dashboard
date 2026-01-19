@@ -1,4 +1,4 @@
-name: INCEpTION Reporting Dashboard – Docker Image
+name: Docker Image CI
 
 on:
   workflow_dispatch:
@@ -58,5 +58,6 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.release.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           build-args: |
             VERSION=${{ steps.release.outputs.version }}
