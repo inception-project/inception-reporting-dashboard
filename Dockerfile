@@ -6,17 +6,20 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Native deps needed by numpy / pandas / cryptography stack
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git \
+ && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    libffi-dev \
+    libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml poetry.lock* ./
-
-RUN pip install --no-cache-dir poetry \
- && poetry config virtualenvs.create false \
- && poetry install --only main --no-interaction --no-ansi
-
+# Copy project files
+COPY pyproject.toml README.md ./
 COPY inception_reports ./inception_reports
-COPY scripts ./scripts
+
+# Install the package from source
+RUN pip install --no-cache-dir .
 
 ENTRYPOINT ["inception_reports"]
