@@ -42,6 +42,37 @@ The INCEpTION Reporting Dashboard helps you track and visualize the progress of 
 
 This package has been developed with [GeMTeX](https://www.medizininformatik-initiative.de/en/gemtex-automated-indexing-medical-texts-research) in mind, and certain configurations, such as `excluded_types.json` in the `inception_reports` home directory, are tailored to its requirements. Users are encouraged to adjust these configurations to suit the specific needs of their projects.
 
+
+## Using the Docker Image
+
+The dashboard is also available as a Docker image via GitHub Container Registry.
+
+### Pull the Image
+
+```bash
+docker pull ghcr.io/inception-project/inception-reporting-dashboard:latest
+````
+
+Replace `latest` with a specific version (e.g. `0.9.7`) if needed.
+
+### Run the Application
+
+```bash
+docker run --rm -p 8501:8501 \
+  ghcr.io/inception-project/inception-reporting-dashboard:latest \
+  --manager
+```
+
+The application will open in your browser at:
+
+```
+http://localhost:8501
+```
+
+### Notes
+
+* Configuration files (e.g. `excluded_types.json`) can be mounted into the container using Docker volumes if customization is required.
+
 ## Issues and Contributions
 
 This package is under active development. If you encounter any bugs or issues, please open a [GitHub issue](https://github.com/inception-project/inception-reporting-dashboard/issues).
