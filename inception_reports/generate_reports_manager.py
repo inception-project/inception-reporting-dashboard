@@ -312,9 +312,14 @@ def configure_ssl_context(ca_bundle: str = None, verify_ssl: bool = True) -> Non
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
         elif ca_bundle:
-            # Create SSL context with custom CA bundle
-            ssl_context = ssl.create_default_context()
-            ssl_context.load_verify_locations(cafile=ca_bundle)
+            # Create SSL context with custom CA bundle, validating the file first
+            if not os.path.isfile(ca_bundle) or not os.access(ca_bundle, os.R_OK):
+                log.error(f"CA bundle file not found or not readable: {ca_bundle}")
+                # Fall back to default SSL context - system trusted CAs
+                ssl_context = ssl.create_default_context()
+            else:
+                ssl_context = ssl.create_default_context()
+                ssl_context.load_verify_locations(cafile=ca_bundle)
         else:
             # Use default SSL context - system trusted CAs
             ssl_context = ssl.create_default_context()
