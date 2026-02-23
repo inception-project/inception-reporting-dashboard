@@ -292,8 +292,7 @@ def create_ssl_session(ca_bundle: str = None, verify_ssl: bool = True):
     session.mount("http://", adapter)
 
     # Set verify parameter for requests
-    if isinstance(verify_ssl, bool):
-        session.verify = verify_ssl
+    session.verify = verify_ssl
 
     return session
 
