@@ -258,14 +258,33 @@ class CustomSSLAdapter(HTTPAdapter):
 
 def create_ssl_session(ca_bundle: str = None, verify_ssl: bool = True):
     """
-    Create a requests session with proper SSL handling.
+    Create and return a new ``requests.Session`` with SSL handling configured.
+
+    This function creates a **new** session instance on each call. The session is
+    configured using a :class:`CustomSSLAdapter` that can either:
+
+    * Disable SSL verification entirely when ``verify_ssl`` is ``False``, or
+    * Use a custom CA bundle when ``verify_ssl`` is ``True`` and ``ca_bundle`` is provided.
+
+    Security considerations:
+        - Setting ``verify_ssl=False`` disables certificate verification and hostname
+          checking. This makes HTTPS connections vulnerable to man-in-the-middle
+          attacks and should only be used in trusted or development environments.
+        - When both ``verify_ssl=False`` and ``ca_bundle`` are provided, the
+          ``verify_ssl`` setting takes precedence and the custom CA bundle is
+          effectively ignored.
 
     Args:
-        ca_bundle: Path to a custom CA certificate file
-        verify_ssl: Whether to verify SSL certificates
+        ca_bundle: Optional path to a custom CA certificate file. Used only when
+            ``verify_ssl`` is ``True``. Ignored if ``verify_ssl`` is ``False``.
+        verify_ssl: Whether to verify SSL certificates. If set to ``False``,
+            certificate verification and hostname checking are disabled for the
+            session and underlying connection pool.
 
     Returns:
-        requests.Session: Configured session with SSL handling
+        requests.Session: A newly created session configured with the requested
+        SSL behavior (either using the custom CA bundle or with SSL verification
+        disabled when explicitly requested).
     """
     session = requests.Session()
     adapter = CustomSSLAdapter(ca_bundle=ca_bundle, verify_ssl=verify_ssl)
