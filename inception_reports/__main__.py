@@ -117,7 +117,7 @@ def main():
 
     os.environ["INCEPTION_VERIFY_SSL"] = args.verify_ssl
     if args.verify_ssl == "false":
-        print("SSL verification is disabled")
+        log.warning("SSL verification is disabled")
 
     if args.manager:
         log.info("STARTING INCEpTION Reporting Dashboard - Manager")
