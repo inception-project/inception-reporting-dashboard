@@ -27,6 +27,7 @@ import streamlit as st
 from packaging.version import parse as parse_version
 from pycaprio import Pycaprio
 from inception_reports.dashboard_version import DASHBOARD_VERSION
+from inception_reports.models import ExportedProjectData, LoadedProject
 from inception_reports.project_loader import (
     create_directory_in_home,
     read_dir as load_projects_from_directory,
@@ -123,7 +124,7 @@ def read_dir(
     progress_callback=None,
     ca_bundle: str = None,
     verify_ssl: bool = True,
-) -> list[dict]:
+) -> list[LoadedProject]:
     return load_projects_from_directory(
         dir_path=dir_path,
         selected_projects_data=selected_projects_data,
@@ -387,7 +388,7 @@ def select_method_to_import_data(progress_container=None):
 
 
 
-def export_data(project_data):
+def export_data(project_data: ExportedProjectData | dict):
     """
     Export project data to a JSON file, and store it in a directory named after the project and the current date.
 
@@ -395,12 +396,17 @@ def export_data(project_data):
         project_data (dict): The data to be exported.
     """
     output_path = export_project_data(project_data)
+    project_name = (
+        project_data.project_name
+        if isinstance(project_data, ExportedProjectData)
+        else project_data["project_name"]
+    )
     st.success(
-        f"{normalize_project_name(project_data['project_name'])} documents status exported successfully to {output_path.parent}"
+        f"{normalize_project_name(project_name)} documents status exported successfully to {output_path.parent}"
     )
 
 
-def create_zip_download(reports):
+def create_zip_download(reports: list[ExportedProjectData]):
     """
     Create a zip file containing all generated JSON reports and provide a download button.
     """
@@ -415,7 +421,7 @@ def create_zip_download(reports):
         )
 
 
-def plot_project_progress(project) -> None:
+def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
     """
     Generate a visual representation of project progress based on a DataFrame of log data.
 
@@ -441,13 +447,13 @@ def plot_project_progress(project) -> None:
     )
     project_data = report.data
     type_counts = report.type_counts
-    project_name = project_data["project_name"]
-    project_tags = project_data["project_tags"]
+    project_name = project_data.project_name
+    project_tags = project_data.project_tags
     show_only_curated = report.show_only_curated
 
     if st.session_state.get("show_only_curated", True) and not report.has_curated_documents:
         st.warning(
-            f"No curated documents found in project **{project['name']}** - "
+            f"No curated documents found in project **{project.name}** - "
             "showing annotations break down for all other documents instead."
         )
         st.session_state["show_only_curated"] = False
@@ -455,7 +461,7 @@ def plot_project_progress(project) -> None:
 
     if project_tags:
         st.write(
-            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: {', '.join(project['tags'])}</div>",
+            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: {', '.join(project.tags)}</div>",
             unsafe_allow_html=True,
         )
     else:
@@ -465,19 +471,19 @@ def plot_project_progress(project) -> None:
         )
 
     data_sizes_docs = [
-        project_data["doc_categories"]["NEW"],
-        project_data["doc_categories"]["ANNOTATION_IN_PROGRESS"],
-        project_data["doc_categories"]["ANNOTATION_FINISHED"],
-        project_data["doc_categories"]["CURATION_IN_PROGRESS"],
-        project_data["doc_categories"]["CURATION_FINISHED"],
+        project_data.doc_categories["NEW"],
+        project_data.doc_categories["ANNOTATION_IN_PROGRESS"],
+        project_data.doc_categories["ANNOTATION_FINISHED"],
+        project_data.doc_categories["CURATION_IN_PROGRESS"],
+        project_data.doc_categories["CURATION_FINISHED"],
     ]
 
     data_sizes_tokens = [
-        project_data["doc_token_categories"]["NEW"],
-        project_data["doc_token_categories"]["ANNOTATION_IN_PROGRESS"],
-        project_data["doc_token_categories"]["ANNOTATION_FINISHED"],
-        project_data["doc_token_categories"]["CURATION_IN_PROGRESS"],
-        project_data["doc_token_categories"]["CURATION_FINISHED"],
+        project_data.doc_token_categories["NEW"],
+        project_data.doc_token_categories["ANNOTATION_IN_PROGRESS"],
+        project_data.doc_token_categories["ANNOTATION_FINISHED"],
+        project_data.doc_token_categories["CURATION_IN_PROGRESS"],
+        project_data.doc_token_categories["CURATION_FINISHED"],
     ]
 
     pie_labels = [
@@ -694,7 +700,7 @@ def main():
     generated_reports = []
     if "method" in st.session_state and "projects" in st.session_state:
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
-        projects = sorted(projects, key=lambda x: x["name"])
+        projects = sorted(projects, key=lambda project: project.name)
         for project in projects:
             project_data = plot_project_progress(project)
             export_data(project_data)

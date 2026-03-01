@@ -74,7 +74,7 @@ def test_read_dir_parses_zip_and_computes_stats(
         )
 
     project = projects[0]
-    annotations = project["annotations"]
+    annotations = project.annotations
 
     assert set(annotations["doc1.txt"].keys()) == {"annotator1"}
     assert set(annotations["doc2.txt"].keys()) == {"INITIAL_CAS"}
@@ -156,4 +156,4 @@ def test_read_dir_keeps_multi_dot_project_names(
             mode="manual",
         )
 
-    assert [project["name"] for project in projects] == [archive_name]
+    assert [project.name for project in projects] == [archive_name]

@@ -39,6 +39,7 @@ from rdflib.plugins.stores.sparqlstore import SPARQLStore
 from requests.adapters import HTTPAdapter
 from urllib3.util.ssl_ import create_urllib3_context
 
+from inception_reports.models import CasStats, LoadedProject, ProjectDocument
 from inception_reports.reporting import compute_cas_stats
 from inception_reports.storage import normalize_project_name
 
@@ -56,7 +57,7 @@ class PreparedProjectArchive:
     project_stem: str
     file_path: str
     project_meta: dict[str, Any]
-    project_documents: list[dict[str, Any]]
+    project_documents: list[ProjectDocument]
     cas_files_by_folder: dict[str, tuple[str, ...]]
     total_cas_files: int
 
@@ -299,7 +300,7 @@ def _load_project_meta(zip_file: zipfile.ZipFile, file_name: str) -> dict[str, A
         return None
 
 
-def _document_folder_prefix(document: dict[str, Any]) -> str:
+def _document_folder_prefix(document: ProjectDocument) -> str:
     document_name = document["name"]
     if document.get("state") == "CURATION_FINISHED":
         return f"curation/{document_name}/"
@@ -329,7 +330,7 @@ def _build_cas_files_by_folder(
 
 
 def _matching_cas_files(
-    cas_files_by_folder: dict[str, tuple[str, ...]], document: dict[str, Any]
+    cas_files_by_folder: dict[str, tuple[str, ...]], document: ProjectDocument
 ) -> list[str]:
     folder_prefix = _document_folder_prefix(document)
     matching_files = list(cas_files_by_folder.get(folder_prefix, ()))
@@ -344,7 +345,7 @@ def _matching_cas_files(
 
 def _count_archive_cas_files(
     cas_files_by_folder: dict[str, tuple[str, ...]],
-    project_documents: list[dict[str, Any]],
+    project_documents: list[ProjectDocument],
 ) -> int:
     total = 0
     for document in project_documents:
@@ -368,15 +369,15 @@ def _load_document_annotations(
     zip_file: zipfile.ZipFile,
     file_name: str,
     project_stem: str,
-    project_documents: list[dict[str, Any]],
+    project_documents: list[ProjectDocument],
     cas_files_by_folder: dict[str, tuple[str, ...]],
     excluded_types: set[str],
     progress_callback,
     processed_cas_overall: int,
     total_cas_overall: int,
-    compute_stats: Callable[[Any, set[str]], tuple[dict[str, Any], set[str]]],
-) -> tuple[dict[str, dict[str, Any]], set[str], int]:
-    annotations = {}
+    compute_stats: Callable[[Any, set[str]], tuple[CasStats, set[str]]],
+) -> tuple[dict[str, dict[str, CasStats]], set[str], int]:
+    annotations: dict[str, dict[str, CasStats]] = {}
     used_snomed_ids = set()
 
     for document in project_documents:
@@ -510,9 +511,9 @@ def read_dir(
     progress_callback=None,
     ca_bundle: str | None = None,
     verify_ssl: bool = True,
-    compute_stats: Callable[[Any, set[str]], tuple[dict[str, Any], set[str]]]
+    compute_stats: Callable[[Any, set[str]], tuple[CasStats, set[str]]]
     | None = None,
-) -> list[dict[str, Any]]:
+) -> list[LoadedProject]:
     compute_stats = compute_stats or compute_cas_stats
     excluded_types = load_excluded_types()
     archives = _prepare_project_archives(dir_path, selected_projects_data)
@@ -521,7 +522,7 @@ def read_dir(
     if progress_callback and total_cas_overall == 0:
         progress_callback(0, 0, None, None)
 
-    projects = []
+    projects: list[LoadedProject] = []
     processed_cas_overall = 0
 
     for archive in archives:
@@ -556,21 +557,21 @@ def read_dir(
                 )
 
                 projects.append(
-                    {
-                        "name": archive.file_name,
-                        "tags": _project_tags(archive.project_meta) or None,
-                        "documents": archive.project_documents,
-                        "annotations": annotations,
-                        "snomed_labels": snomed_label_map,
-                        "inception_version": archive.project_meta.get(
+                    LoadedProject(
+                        name=archive.file_name,
+                        tags=_project_tags(archive.project_meta) or None,
+                        documents=archive.project_documents,
+                        annotations=annotations,
+                        snomed_labels=snomed_label_map,
+                        inception_version=archive.project_meta.get(
                             "application_version", "Older than 38.4"
                         ),
-                    }
+                    )
                 )
 
             gc.collect()
         except Exception as error:
-            log.error("Error processing %s: %s", file_name, error)
+            log.error("Error processing %s: %s", archive.file_name, error)
 
     if progress_callback and total_cas_overall > 0:
         progress_callback(total_cas_overall, total_cas_overall, None, None)

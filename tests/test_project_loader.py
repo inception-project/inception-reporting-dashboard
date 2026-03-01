@@ -86,7 +86,7 @@ def test_read_dir_fetches_snomed_labels_in_api_mode(
         ),
     )
 
-    assert projects[0]["snomed_labels"] == {"SNOMED:123": "disorder"}
+    assert projects[0].snomed_labels == {"SNOMED:123": "disorder"}
     mock_get_snomed_semantic_tag_map.assert_called_once_with(
         "https://example.org",
         123,

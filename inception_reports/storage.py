@@ -20,9 +20,12 @@ import io
 import json
 import os
 import zipfile
+from dataclasses import asdict, is_dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
+
+from inception_reports.models import ExportedProjectData
 
 
 def normalize_project_name(project_name: str) -> str:
@@ -30,6 +33,16 @@ def normalize_project_name(project_name: str) -> str:
     if normalized_name.lower().endswith(".zip"):
         return normalized_name[:-4]
     return normalized_name
+
+
+def _serialize_project_data(
+    project_data: ExportedProjectData | dict[str, Any],
+) -> dict[str, Any]:
+    if isinstance(project_data, ExportedProjectData):
+        return project_data.as_dict()
+    if is_dataclass(project_data):
+        return asdict(project_data)
+    return dict(project_data)
 
 
 def get_output_directory(output_directory: str | None = None) -> Path:
@@ -44,29 +57,35 @@ def get_output_directory(output_directory: str | None = None) -> Path:
 
 
 def export_project_data(
-    project_data: dict[str, Any],
+    project_data: ExportedProjectData | dict[str, Any],
     output_directory: str | None = None,
     current_date: date | None = None,
 ) -> Path:
+    serialized_project_data = _serialize_project_data(project_data)
     export_date = (current_date or date.today()).strftime("%Y_%m_%d")
     destination = get_output_directory(output_directory)
     destination.mkdir(parents=True, exist_ok=True)
 
-    project_name = normalize_project_name(project_data["project_name"])
+    project_name = normalize_project_name(serialized_project_data["project_name"])
     output_path = destination / f"{project_name}_{export_date}.json"
-    output_path.write_text(json.dumps(project_data, indent=4), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(serialized_project_data, indent=4), encoding="utf-8"
+    )
     return output_path
 
 
-def build_reports_archive(reports: list[dict[str, Any]]) -> bytes | None:
+def build_reports_archive(
+    reports: list[ExportedProjectData | dict[str, Any]]
+) -> bytes | None:
     if not reports:
         return None
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as archive:
         for report in reports:
-            report_name = normalize_project_name(report["project_name"])
-            file_name = f"{report_name}_{report['created']}.json"
-            archive.writestr(file_name, json.dumps(report, indent=4))
+            serialized_report = _serialize_project_data(report)
+            report_name = normalize_project_name(serialized_report["project_name"])
+            file_name = f"{report_name}_{serialized_report['created']}.json"
+            archive.writestr(file_name, json.dumps(serialized_report, indent=4))
 
     return zip_buffer.getvalue()
