@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from dataclasses import dataclass
 import gc
 import json
 import logging
@@ -46,6 +48,17 @@ INCEPTION_HOME_DIR = ".inception_reports"
 PROJECTS_DIR_NAME = "projects"
 EXCLUDED_TYPES_FILE = "excluded_types.json"
 SPARQL_HEADERS = {"Accept": "application/sparql-results+xml"}
+
+
+@dataclass(frozen=True)
+class PreparedProjectArchive:
+    file_name: str
+    project_stem: str
+    file_path: str
+    project_meta: dict[str, Any]
+    project_documents: list[dict[str, Any]]
+    cas_files_by_folder: dict[str, tuple[str, ...]]
+    total_cas_files: int
 
 
 def create_directory_in_home() -> Path:
@@ -281,6 +294,9 @@ def _load_project_meta(zip_file: zipfile.ZipFile, file_name: str) -> dict[str, A
     except KeyError:
         log.warning("No exportedproject.json found in %s", file_name)
         return None
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        log.warning("Invalid exportedproject.json in %s: %s", file_name, error)
+        return None
 
 
 def _document_folder_prefix(document: dict[str, Any]) -> str:
@@ -290,17 +306,33 @@ def _document_folder_prefix(document: dict[str, Any]) -> str:
     return f"annotation/{document_name}/"
 
 
+def _build_cas_files_by_folder(
+    zip_file: zipfile.ZipFile,
+) -> dict[str, tuple[str, ...]]:
+    cas_files_by_folder: dict[str, list[str]] = defaultdict(list)
+
+    for info in zip_file.infolist():
+        if (
+            info.is_dir()
+            or not info.filename.endswith(".json")
+            or info.filename == "exportedproject.json"
+        ):
+            continue
+
+        folder_prefix = f"{info.filename.rsplit('/', 1)[0]}/"
+        cas_files_by_folder[folder_prefix].append(info.filename)
+
+    return {
+        folder_prefix: tuple(paths)
+        for folder_prefix, paths in cas_files_by_folder.items()
+    }
+
+
 def _matching_cas_files(
-    zip_file: zipfile.ZipFile, document: dict[str, Any]
+    cas_files_by_folder: dict[str, tuple[str, ...]], document: dict[str, Any]
 ) -> list[str]:
     folder_prefix = _document_folder_prefix(document)
-    matching_files = [
-        info.filename
-        for info in zip_file.infolist()
-        if info.filename.startswith(folder_prefix)
-        and info.filename.endswith(".json")
-        and not info.is_dir()
-    ]
+    matching_files = list(cas_files_by_folder.get(folder_prefix, ()))
 
     if len(matching_files) > 1:
         matching_files = [
@@ -311,11 +343,12 @@ def _matching_cas_files(
 
 
 def _count_archive_cas_files(
-    zip_file: zipfile.ZipFile, project_documents: list[dict[str, Any]]
+    cas_files_by_folder: dict[str, tuple[str, ...]],
+    project_documents: list[dict[str, Any]],
 ) -> int:
     total = 0
     for document in project_documents:
-        total += len(_matching_cas_files(zip_file, document))
+        total += len(_matching_cas_files(cas_files_by_folder, document))
     return total
 
 
@@ -336,6 +369,7 @@ def _load_document_annotations(
     file_name: str,
     project_stem: str,
     project_documents: list[dict[str, Any]],
+    cas_files_by_folder: dict[str, tuple[str, ...]],
     excluded_types: set[str],
     progress_callback,
     processed_cas_overall: int,
@@ -348,7 +382,7 @@ def _load_document_annotations(
     for document in project_documents:
         document_name = document["name"]
         annotations[document_name] = {}
-        matching_files = _matching_cas_files(zip_file, document)
+        matching_files = _matching_cas_files(cas_files_by_folder, document)
 
         if not matching_files:
             log.warning(
@@ -381,6 +415,45 @@ def _load_document_annotations(
                 )
 
     return annotations, used_snomed_ids, processed_cas_overall
+
+
+def _prepare_project_archives(
+    dir_path: str, selected_projects_data: dict[str, Any] | None
+) -> list[PreparedProjectArchive]:
+    prepared_archives = []
+
+    for file_name, project_stem, file_path in _iter_selected_archives(
+        dir_path, selected_projects_data
+    ):
+        try:
+            with zipfile.ZipFile(file_path, "r") as zip_file:
+                project_meta = _load_project_meta(zip_file, file_name)
+                if not project_meta:
+                    continue
+
+                project_documents = project_meta.get("source_documents", [])
+                if not project_documents:
+                    log.warning("No source documents found in project %s", file_name)
+                    continue
+
+                cas_files_by_folder = _build_cas_files_by_folder(zip_file)
+                prepared_archives.append(
+                    PreparedProjectArchive(
+                        file_name=file_name,
+                        project_stem=project_stem,
+                        file_path=file_path,
+                        project_meta=project_meta,
+                        project_documents=project_documents,
+                        cas_files_by_folder=cas_files_by_folder,
+                        total_cas_files=_count_archive_cas_files(
+                            cas_files_by_folder, project_documents
+                        ),
+                    )
+                )
+        except Exception as error:
+            log.error("Error preparing %s: %s", file_name, error)
+
+    return prepared_archives
 
 
 def _fetch_snomed_labels(
@@ -442,23 +515,8 @@ def read_dir(
 ) -> list[dict[str, Any]]:
     compute_stats = compute_stats or compute_cas_stats
     excluded_types = load_excluded_types()
-    archives = _iter_selected_archives(dir_path, selected_projects_data)
-    total_cas_overall = 0
-
-    for file_name, _, file_path in archives:
-        try:
-            with zipfile.ZipFile(file_path, "r") as zip_file:
-                project_meta = _load_project_meta(zip_file, file_name)
-                if not project_meta:
-                    continue
-
-                project_documents = project_meta.get("source_documents", [])
-                if not project_documents:
-                    continue
-
-                total_cas_overall += _count_archive_cas_files(zip_file, project_documents)
-        except Exception as error:
-            log.error("Error pre-counting CAS files in %s: %s", file_name, error)
+    archives = _prepare_project_archives(dir_path, selected_projects_data)
+    total_cas_overall = sum(archive.total_cas_files for archive in archives)
 
     if progress_callback and total_cas_overall == 0:
         progress_callback(0, 0, None, None)
@@ -466,25 +524,17 @@ def read_dir(
     projects = []
     processed_cas_overall = 0
 
-    for file_name, project_stem, file_path in archives:
+    for archive in archives:
         try:
-            with zipfile.ZipFile(file_path, "r") as zip_file:
-                project_meta = _load_project_meta(zip_file, file_name)
-                if not project_meta:
-                    continue
-
-                project_documents = project_meta.get("source_documents", [])
-                if not project_documents:
-                    log.warning("No source documents found in project %s", file_name)
-                    continue
-
-                log.info("Started processing project %s", file_name)
+            with zipfile.ZipFile(archive.file_path, "r") as zip_file:
+                log.info("Started processing project %s", archive.file_name)
                 annotations, used_snomed_ids, processed_cas_overall = (
                     _load_document_annotations(
                         zip_file,
-                        file_name,
-                        project_stem,
-                        project_documents,
+                        archive.file_name,
+                        archive.project_stem,
+                        archive.project_documents,
+                        archive.cas_files_by_folder,
                         excluded_types,
                         progress_callback,
                         processed_cas_overall,
@@ -496,23 +546,23 @@ def read_dir(
                     mode=mode,
                     api_url=api_url,
                     auth=auth,
-                    project_meta=project_meta,
+                    project_meta=archive.project_meta,
                     selected_projects_data=selected_projects_data,
-                    project_stem=project_stem,
+                    project_stem=archive.project_stem,
                     used_snomed_ids=used_snomed_ids,
-                    file_name=file_name,
+                    file_name=archive.file_name,
                     ca_bundle=ca_bundle,
                     verify_ssl=verify_ssl,
                 )
 
                 projects.append(
                     {
-                        "name": file_name,
-                        "tags": _project_tags(project_meta) or None,
-                        "documents": project_documents,
+                        "name": archive.file_name,
+                        "tags": _project_tags(archive.project_meta) or None,
+                        "documents": archive.project_documents,
                         "annotations": annotations,
                         "snomed_labels": snomed_label_map,
-                        "inception_version": project_meta.get(
+                        "inception_version": archive.project_meta.get(
                             "application_version", "Older than 38.4"
                         ),
                     }
