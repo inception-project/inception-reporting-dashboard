@@ -20,11 +20,11 @@ import os
 import time
 
 import pandas as pd
-import pkg_resources
 import plotly.express as px
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+from packaging.version import parse as parse_version
 from pycaprio import Pycaprio
 from inception_reports.dashboard_version import DASHBOARD_VERSION
 from inception_reports.project_loader import (
@@ -90,7 +90,7 @@ def startup():
         latest_version = check_package_version(current_version, package_name)
         version_message = f"Dashboard Version: {current_version}"
         
-        if latest_version and pkg_resources.parse_version(current_version) < pkg_resources.parse_version(latest_version):
+        if latest_version and parse_version(current_version) < parse_version(latest_version):
             st.sidebar.warning(f"{version_message} (Update available: {latest_version})")
         else:
             st.sidebar.info(version_message)
@@ -105,9 +105,9 @@ def check_package_version(current_version, package_name):
         response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
         if response.status_code == 200:
             latest_version = response.json()["info"]["version"]
-            if pkg_resources.parse_version(
+            if parse_version(
                 current_version
-            ) < pkg_resources.parse_version(latest_version):
+            ) < parse_version(latest_version):
                 return latest_version
     except requests.RequestException:
         return None
@@ -160,10 +160,10 @@ def login_to_inception(api_url, username, password, ca_bundle=None, verify_ssl=T
         inception_client = Pycaprio(api_url, (username, password), ca_bundle=ca_bundle, verify=verify_ssl)
         try:
             inception_client.api.projects()
-            st.sidebar.success("Login successful ✅")
+            st.sidebar.success("Login successful")
             return True, inception_client
         except Exception:
-            st.sidebar.error("Login unsuccessful ❌")
+            st.sidebar.error("Login unsuccessful")
             return False, None
     return False, None
 
