@@ -229,6 +229,6 @@ def render_project_charts(
 
     col1, _, col3 = st.columns([1, 0.1, 1])
     with col1:
-        st.plotly_chart(pie_chart, use_container_width=True)
+        st.plotly_chart(pie_chart, width=True)
     with col3:
-        st.plotly_chart(bar_chart, use_container_width=True)
+        st.plotly_chart(bar_chart, width=True)
