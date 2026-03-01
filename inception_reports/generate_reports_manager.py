@@ -17,7 +17,6 @@
 import copy
 import gc
 import importlib.resources
-import io
 import json
 import logging
 import os
@@ -28,7 +27,6 @@ import time
 import urllib.request
 import zipfile
 from collections import defaultdict
-from datetime import datetime
 from itertools import islice
 
 import cassis
@@ -43,6 +41,12 @@ import streamlit as st
 from pycaprio import Pycaprio
 from rdflib.plugins.stores.sparqlstore import SPARQLStore
 from inception_reports.dashboard_version import DASHBOARD_VERSION
+from inception_reports.reporting import (
+    build_project_report,
+    compute_cas_stats,
+    find_element_by_name,
+)
+from inception_reports.storage import build_reports_archive, export_project_data
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -899,177 +903,6 @@ def select_method_to_import_data(progress_container=None):
 
 
 
-def find_element_by_name(element_list, name):
-    """
-    Finds an element in the given element list by its name.
-
-    Args:
-        element_list (list): A list of elements to search through.
-        name (str): The name of the element to find.
-
-    Returns:
-        str: The UI name of the found element, or the last part of the name if not found.
-    """
-    # if "gemtex" in name:
-        # return name
-    for element in element_list:
-        if element.name == name:
-            return element.uiName
-    return name.split(".")[-1]
-
-def compute_cas_stats(cas, excluded_types):
-    """
-    Compute lightweight stats for a single CAS and return:
-      - counts: {type_ui_name: {"total": int, "features": {value: count}}}
-      - snomed_ids: set of SNOMED IDs seen in gemtex.Concept/id
-
-    This avoids keeping the CAS object around after counting.
-    """
-    counts = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
-    snomed_ids = set()
-
-    skip_features = {
-        cassis.typesystem.FEATURE_BASE_NAME_END,
-        cassis.typesystem.FEATURE_BASE_NAME_BEGIN,
-        cassis.typesystem.FEATURE_BASE_NAME_SOFA,
-        "literal",
-    }
-
-    try:
-        layer_defs = cas.select(
-            "de.tudarmstadt.ukp.clarin.webanno.api.type.LayerDefinition"
-        )
-    except Exception:
-        layer_defs = []
-
-    for t in cas.typesystem.get_types():
-        if t.name in excluded_types:
-            continue
-
-        relevant_features = [
-            f for f in t.all_features if f.name not in skip_features
-        ]
-        if not relevant_features:
-            continue
-
-        is_concept_type = t.name == "gemtex.Concept"
-        has_any = False
-        type_entry = None
-
-        for item in cas.select(t.name):
-            if not has_any:
-                type_name = find_element_by_name(layer_defs, t.name)
-                type_entry = counts[type_name]
-                has_any = True
-
-            type_entry["total"] += 1
-
-            for feature in relevant_features:
-                value = item.get(feature.name)
-                if value is None:
-                    continue
-                if is_concept_type and feature.name == "id":
-                    snomed_ids.add(value)
-                type_entry["features"][value] += 1
-
-    return counts, snomed_ids
-
-
-def get_type_counts(annotations, snomed_labels=None, aggregation_mode="Sum"):
-    """
-    Calculate the count of each annotation type across all documents.
-
-    Args:
-        annotations (dict):
-            {doc_name: {annotator_name: cas_stats}}
-            where cas_stats is:
-                {type_name: {'total': int, 'features': {value: count}}}
-        snomed_labels (dict): Optional mapping for SNOMED concept IDs -> semantic tag.
-        aggregation_mode (str): One of "Sum", "Average", or "Max".
-
-    Returns:
-        dict: {type_name: {'total': count, 'documents': {doc_id: count}, 'features': {...}}}
-    """
-
-    type_count = {}
-
-    def merge_counts(counts_list):
-        merged = defaultdict(lambda: {"total": 0, "features": defaultdict(int)})
-        for cdict in counts_list:
-            for t, vals in cdict.items():
-                merged[t]["total"] += vals["total"]
-                for feat, feat_count in vals["features"].items():
-                    merged[t]["features"][feat] += feat_count
-        return merged
-
-    def average_counts(counts_list):
-        if not counts_list:
-            return {}
-        merged = merge_counts(counts_list)
-        n = len(counts_list)
-        for t, vals in merged.items():
-            vals["total"] = round(vals["total"] / n)
-            for feat in list(vals["features"].keys()):
-                vals["features"][feat] = round(vals["features"][feat] / n)
-        return merged
-
-    def max_counts(counts_list):
-        max_total = 0
-        best = {}
-        for cdict in counts_list:
-            total = sum(v["total"] for v in cdict.values())
-            if total > max_total:
-                max_total = total
-                best = cdict
-        return best
-
-    for doc_name, annotator_map in annotations.items():
-        cas_stats_list = list(annotator_map.values())
-        if not cas_stats_list:
-            continue
-
-        if aggregation_mode == "Sum":
-            combined_counts = merge_counts(cas_stats_list)
-        elif aggregation_mode == "Average":
-            combined_counts = average_counts(cas_stats_list)
-        elif aggregation_mode == "Max":
-            combined_counts = max_counts(cas_stats_list)
-        else:
-            combined_counts = merge_counts(cas_stats_list)
-
-        # Apply SNOMED mapping at the aggregated per-document level for Concept type
-        if snomed_labels:
-            concept_counts = combined_counts.get("Concept")
-            if concept_counts:
-                mapped_features = defaultdict(int)
-                for raw_val, count in concept_counts["features"].items():
-                    label = snomed_labels.get(raw_val, raw_val)
-                    mapped_features[label] += count
-                concept_counts["features"] = mapped_features
-
-        for tname, vals in combined_counts.items():
-            if tname not in type_count:
-                type_count[tname] = {"total": 0, "documents": {}, "features": {}}
-            type_count[tname]["total"] += vals["total"]
-            type_count[tname]["documents"][doc_name] = vals["total"]
-
-            for feat_val, feat_count in vals["features"].items():
-                if feat_val not in type_count[tname]["features"]:
-                    type_count[tname]["features"][feat_val] = {}
-                type_count[tname]["features"][feat_val][doc_name] = feat_count
-
-    for tname, tvals in type_count.items():
-        tvals["features"] = dict(
-            sorted(tvals["features"].items(), key=lambda x: sum(x[1].values()), reverse=True)
-        )
-    type_count = dict(
-        sorted(type_count.items(), key=lambda item: item[1]["total"], reverse=True)
-    )
-
-    return type_count
-
-
-
 def export_data(project_data):
     """
     Export project data to a JSON file, and store it in a directory named after the project and the current date.
@@ -1077,24 +910,9 @@ def export_data(project_data):
     Parameters:
         project_data (dict): The data to be exported.
     """
-    current_date = datetime.now().strftime("%Y_%m_%d")
-
-    output_directory = os.getenv("INCEPTION_OUTPUT_DIR")
-
-    if output_directory is None:
-        output_directory = os.path.join(os.getcwd(), "exported_project_data")
-
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
-
-    project_name = project_data["project_name"]
-
-    with open(
-        f"{output_directory}/{project_name.split('.')[0]}_{current_date}.json", "w"
-    ) as output_file:
-        json.dump(project_data, output_file, indent=4)
+    output_path = export_project_data(project_data)
     st.success(
-        f"{project_name.split('.')[0]} documents status exported successfully to {output_directory} ✅"
+        f"{project_data['project_name'].split('.')[0]} documents status exported successfully to {output_path.parent}"
     )
 
 
@@ -1103,21 +921,13 @@ def create_zip_download(reports):
     Create a zip file containing all generated JSON reports and provide a download button.
     """
 
-    if reports:
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-            for report in reports:
-                file_name = f"{report['project_name'].split('.')[0]}_{report['created']}.json"
-                json_data = json.dumps(report, indent=4)
-                zip_file.writestr(file_name, json_data)
-
-        zip_buffer.seek(0)
-
+    archive_data = build_reports_archive(reports)
+    if archive_data:
         st.download_button(
             label="Download All Reports (ZIP)",
             file_name="all_reports.zip",
             mime="application/zip",
-            data=zip_buffer.getvalue(),
+            data=archive_data,
         )
 
 
@@ -1137,65 +947,26 @@ def plot_project_progress(project) -> None:
 
     """
 
-    # df = project["logs"]
-    project_name = project["name"].strip(".zip")
-    project_tags = project["tags"]
-    project_annotations = project["annotations"]
-    project_documents = project["documents"]
     aggregation_mode = st.session_state.get("aggregation_mode", "Sum")
-    type_counts = get_type_counts(project_annotations, project.get("snomed_labels", {}), aggregation_mode)
-
     show_only_curated = st.session_state.get("show_only_curated", True)
+    report = build_project_report(
+        project=project,
+        aggregation_mode=aggregation_mode,
+        dashboard_version=get_project_info(),
+        show_only_curated=show_only_curated,
+    )
+    project_data = report.data
+    type_counts = report.type_counts
+    project_name = project_data["project_name"]
+    project_tags = project_data["project_tags"]
+    show_only_curated = report.show_only_curated
 
-    curated_docs = {
-        doc["name"]
-        for doc in project["documents"]
-        if doc.get("state") == "CURATION_FINISHED"
-    }
-
-    # If no curated documents exist, force disable this mode
-    if show_only_curated and not curated_docs:
+    if st.session_state.get("show_only_curated", True) and not report.has_curated_documents:
         st.warning(
-            f"No curated documents found in project **{project['name']}** — "
+            f"No curated documents found in project **{project['name']}** - "
             "showing annotations break down for all other documents instead."
         )
-        show_only_curated = False
         st.session_state["show_only_curated"] = False
-
-    # Proceed with filtering only if the flag is still True
-    if show_only_curated:
-        curated_type_counts = {}
-
-        for tname, tvals in type_counts.items():
-            curated_docs_counts = {
-                doc: count for doc, count in tvals["documents"].items() if doc in curated_docs
-            }
-
-            if not curated_docs_counts:
-                continue  # skip types that appear only in non-curated docs
-
-            curated_total = sum(curated_docs_counts.values())
-
-            curated_features = {}
-            for feat, feat_docs in tvals["features"].items():
-                filtered_feat_docs = {
-                    doc: count for doc, count in feat_docs.items() if doc in curated_docs
-                }
-                if filtered_feat_docs:
-                    curated_features[feat] = filtered_feat_docs
-
-            curated_type_counts[tname] = {
-                "total": curated_total,
-                "documents": curated_docs_counts,
-                "features": curated_features,
-            }
-
-        # Keep both versions
-        full_type_counts = type_counts
-        type_counts = curated_type_counts
-    else:
-        # Use all documents
-        full_type_counts = type_counts
 
 
     if project_tags:
@@ -1208,77 +979,6 @@ def plot_project_progress(project) -> None:
             f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: No tags available</div>",
             unsafe_allow_html=True,
         )
-
-    doc_categories = {
-        "ANNOTATION_IN_PROGRESS": 0,
-        "ANNOTATION_FINISHED": 0,
-        "CURATION_IN_PROGRESS": 0,
-        "CURATION_FINISHED": 0,
-        "NEW": 0,
-    }
-
-    for doc in project_documents:
-        state = doc["state"]
-        if state in doc_categories:
-            doc_categories[state] += 1
-
-    doc_token_categories = {
-        "ANNOTATION_IN_PROGRESS": 0,
-        "ANNOTATION_FINISHED": 0,
-        "CURATION_IN_PROGRESS": 0,
-        "CURATION_FINISHED": 0,
-        "NEW": 0,
-    }
-
-    for doc in project_documents:
-        log.debug(f"Start processing tokens for document {doc}")
-        state = doc["state"]
-        if state in doc_token_categories:
-            token_docs = full_type_counts.get("Token", {}).get("documents", {})
-            doc_token_categories[state] += token_docs.get(doc["name"], 0)
-
-    output_type_counts = {}
-    doc_states = {doc["name"]: doc["state"] for doc in project_documents}
-
-    for category, details in full_type_counts.items():
-        # Calculate total count split by document status
-        total_by_status = defaultdict(int)
-        for doc_name, count in details["documents"].items():
-            state = doc_states.get(doc_name, "UNKNOWN")
-            total_by_status[state] += count
-        
-        output_type_counts[category] = {
-            "total": details["total"],
-            "total_by_status": dict(total_by_status)
-        }
-
-        if category in ["PHI", "Concept"]:
-            feature_state_breakdown = defaultdict(lambda: defaultdict(int))
-            
-            for feature_value, doc_counts in details["features"].items():
-                for doc_name, count in doc_counts.items():
-                    state = doc_states.get(doc_name, "UNKNOWN")
-                    feature_state_breakdown[feature_value][state] += count
-
-            # Convert to regular dict for export
-            output_type_counts[category]["features"] = {
-                feature: dict(state_counts)
-                for feature, state_counts in feature_state_breakdown.items()
-            }
-
-
-
-    project_data = {
-        "project_name": project_name,
-        "project_tags": project_tags,
-        "doc_categories": doc_categories,
-        "doc_token_categories": doc_token_categories,
-        "type_counts": output_type_counts,
-        "aggregation_mode": st.session_state.get("aggregation_mode", "Sum"),
-        "created": datetime.now().date().isoformat(),
-        "inception_version": project.get("inception_version"), 
-        "dashboard_version": get_project_info() if get_project_info() else None,
-    }
 
     data_sizes_docs = [
         project_data["doc_categories"]["NEW"],
