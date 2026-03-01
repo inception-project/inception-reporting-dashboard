@@ -1,6 +1,6 @@
 # INCEpTION Reporting Dashboard
 
-The INCEpTION Reporting Dashboard helps you track and visualize the progress of your INCEpTION project(s). It provides tools for project managers and leads to monitor metrics, analyze annotations, and export progress reports.
+The INCEpTION Reporting Dashboard helps you track and visualize the progress of your INCEpTION project(s). It provides tools to monitor metrics, analyze annotations, and export progress reports.
 
 ## Features
 
@@ -24,16 +24,10 @@ The INCEpTION Reporting Dashboard helps you track and visualize the progress of 
 
 3. **Run the Application**:
 
-   - For managing a single project or location, use:
+   - To launch the dashboard, use:
 
      ```bash
-     inception_reports --manager
-     ```
-
-   - For tracking the status of multiple projects, use:
-
-     ```bash
-     inception_reports --lead
+     inception_reports
      ```
 
 4. **Follow the Instructions**: The application will open a browser window. Follow the on-screen instructions to proceed.
