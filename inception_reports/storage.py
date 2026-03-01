@@ -25,6 +25,13 @@ from pathlib import Path
 from typing import Any
 
 
+def normalize_project_name(project_name: str) -> str:
+    normalized_name = Path(project_name).name
+    if normalized_name.lower().endswith(".zip"):
+        return normalized_name[:-4]
+    return normalized_name
+
+
 def get_output_directory(output_directory: str | None = None) -> Path:
     if output_directory:
         return Path(output_directory)
@@ -45,7 +52,7 @@ def export_project_data(
     destination = get_output_directory(output_directory)
     destination.mkdir(parents=True, exist_ok=True)
 
-    project_name = project_data["project_name"].split(".")[0]
+    project_name = normalize_project_name(project_data["project_name"])
     output_path = destination / f"{project_name}_{export_date}.json"
     output_path.write_text(json.dumps(project_data, indent=4), encoding="utf-8")
     return output_path
@@ -58,7 +65,7 @@ def build_reports_archive(reports: list[dict[str, Any]]) -> bytes | None:
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as archive:
         for report in reports:
-            report_name = report["project_name"].split(".")[0]
+            report_name = normalize_project_name(report["project_name"])
             file_name = f"{report_name}_{report['created']}.json"
             archive.writestr(file_name, json.dumps(report, indent=4))
 

@@ -119,3 +119,41 @@ def test_export_data(tmp_path, monkeypatch):
     # Check all fields preserved
     for key, value in project_data.items():
         assert exported[key] == value
+
+
+@patch("inception_reports.generate_reports_manager.compute_cas_stats")
+@patch("cassis.load_cas_from_json")
+@patch("zipfile.is_zipfile", return_value=True)
+def test_read_dir_keeps_multi_dot_project_names(
+    mock_is_zip, mock_load_cas, mock_compute_stats, tmp_path
+):
+    mock_compute_stats.return_value = (
+        {"MockType": {"total": 1, "features": {"x": 1}}},
+        set(),
+    )
+    mock_load_cas.return_value = object()
+
+    archive_name = "project.alpha.v2.zip"
+    with patch("os.listdir", return_value=[archive_name]):
+        zip_path = tmp_path / archive_name
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr(
+                "exportedproject.json",
+                json.dumps(
+                    {
+                        "description": "#tagA",
+                        "source_documents": [
+                            {"name": "doc1.txt", "state": "ANNOTATION_IN_PROGRESS"}
+                        ],
+                    }
+                ),
+            )
+            archive.writestr("annotation/doc1.txt/annotator1.json", "{}")
+
+        projects = read_dir(
+            str(tmp_path),
+            selected_projects_data={"project.alpha.v2": -1},
+            mode="manual",
+        )
+
+    assert [project["name"] for project in projects] == [archive_name]

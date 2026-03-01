@@ -38,6 +38,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.ssl_ import create_urllib3_context
 
 from inception_reports.reporting import compute_cas_stats
+from inception_reports.storage import normalize_project_name
 
 log = logging.getLogger(__name__)
 
@@ -255,7 +256,7 @@ def get_kb_id_from_project_meta(project_meta: dict[str, Any]) -> str | None:
 
 
 def _project_stem(file_name: str) -> str:
-    return file_name.split(".")[0]
+    return normalize_project_name(file_name)
 
 
 def _iter_selected_archives(

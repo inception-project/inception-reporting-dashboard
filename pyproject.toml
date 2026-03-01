@@ -21,6 +21,7 @@ dependencies = [
     "pycaprio",
     "PyYAML",
     "rdflib",
+    "packaging",
 ]
 
 classifiers = [

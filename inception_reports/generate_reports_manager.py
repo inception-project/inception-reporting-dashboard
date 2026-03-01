@@ -37,6 +37,7 @@ from inception_reports.reporting import (
     find_element_by_name,
 )
 from inception_reports.storage import build_reports_archive, export_project_data
+from inception_reports.storage import normalize_project_name
 
 st.set_page_config(
     page_title="INCEpTION Reporting Dashboard",
@@ -232,7 +233,10 @@ def select_method_to_import_data(progress_container=None):
                     with open(file_path, "wb") as f:
                         f.write(uploaded_file.read())
 
-                selected_projects = [f.name.split(".")[0] for f in uploaded_files]
+                selected_projects = [
+                    normalize_project_name(uploaded_file.name)
+                    for uploaded_file in uploaded_files
+                ]
 
                 progress_label, progress_bar, progress_callback = init_progress()
 
@@ -392,7 +396,7 @@ def export_data(project_data):
     """
     output_path = export_project_data(project_data)
     st.success(
-        f"{project_data['project_name'].split('.')[0]} documents status exported successfully to {output_path.parent}"
+        f"{normalize_project_name(project_data['project_name'])} documents status exported successfully to {output_path.parent}"
     )
 
 
