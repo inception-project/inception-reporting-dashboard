@@ -19,14 +19,20 @@ import logging
 import os
 import time
 
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import requests
 import streamlit as st
 from packaging.version import parse as parse_version
 from pycaprio import Pycaprio
 from inception_reports.dashboard_version import DASHBOARD_VERSION
+from inception_reports.manager_charts import render_project_charts
+from inception_reports.manager_ui import (
+    apply_dashboard_styles,
+    create_progress_widgets,
+    render_dashboard_title,
+    render_missing_curated_documents_warning,
+    render_project_header,
+    render_version_status,
+)
 from inception_reports.models import ExportedProjectData, LoadedProject
 from inception_reports.project_loader import (
     create_directory_in_home,
@@ -57,45 +63,17 @@ log = logging.getLogger()
 
 
 def startup():
-
-    st.markdown(
-        """
-
-        <style>
-        .block-container {
-            padding-top: 0rem;
-            padding-bottom: 5rem;
-            padding-left: 5rem;
-            padding-right: 5rem;
-        }
-        </style>
-
-        <style>
-        div[data-testid="stHorizontalBlock"] {
-            margin-top: 1rem;
-            border: thick double #999999;
-            box-shadow: 0px 0px 10px #999999;
-        }
-        </style>
-
-        <style>
-        section.main > div {max-width:95%}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    apply_dashboard_styles()
 
     project_info = get_project_info()
     if project_info:
         current_version = project_info
         package_name = "inception-reports"
         latest_version = check_package_version(current_version, package_name)
-        version_message = f"Dashboard Version: {current_version}"
-        
-        if latest_version and parse_version(current_version) < parse_version(latest_version):
-            st.sidebar.warning(f"{version_message} (Update available: {latest_version})")
-        else:
-            st.sidebar.info(version_message)
+        has_update = latest_version and parse_version(current_version) < parse_version(
+            latest_version
+        )
+        render_version_status(current_version, latest_version if has_update else None)
 
 
 def get_project_info():
@@ -175,42 +153,6 @@ def select_method_to_import_data(progress_container=None):
     Allows the user to select a method to import data for generating reports.
     """
 
-    def init_progress():
-        """
-        Create a label + progress bar in the top-of-page container and return a
-        Streamlit-friendly progress callback.
-
-        Returns:
-            (progress_label, progress_bar, progress_callback)
-        """
-        if progress_container is None:
-            return None, None, None
-
-        container = progress_container.container()
-        progress_label = container.empty()
-        progress_bar = container.progress(0)
-
-        def progress_callback(done, total, current_project=None, current_doc=None):
-            if progress_label is None or progress_bar is None:
-                return
-
-            if total <= 0:
-                progress_label.text("No CAS files found to process.")
-                progress_bar.progress(0)
-                return
-
-            fraction = min(max(done / total, 0.0), 1.0)
-            percent = int(fraction * 100)
-            msg = f"Generating reports: {done}/{total} CAS files"
-            if current_project:
-                msg += f" • Project: {current_project}"
-            if current_doc:
-                msg += f" • Document: {current_doc}"
-            progress_label.text(msg)
-            progress_bar.progress(percent)
-
-        return progress_label, progress_bar, progress_callback
-
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=1
     )
@@ -239,7 +181,9 @@ def select_method_to_import_data(progress_container=None):
                     for uploaded_file in uploaded_files
                 ]
 
-                progress_label, progress_bar, progress_callback = init_progress()
+                progress_label, progress_bar, progress_callback = create_progress_widgets(
+                    progress_container
+                )
 
                 st.session_state["projects"] = read_dir(
                     dir_path=temp_dir,
@@ -341,7 +285,9 @@ def select_method_to_import_data(progress_container=None):
                 st.session_state["method"] = "API"
 
                 # Now initialize the CAS-processing progress bar at the top
-                progress_label, progress_bar, progress_callback = init_progress()
+                progress_label, progress_bar, progress_callback = create_progress_widgets(
+                    progress_container
+                )
 
                 st.session_state["projects"] = read_dir(
                     dir_path=projects_folder,
@@ -452,232 +398,11 @@ def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
     show_only_curated = report.show_only_curated
 
     if st.session_state.get("show_only_curated", True) and not report.has_curated_documents:
-        st.warning(
-            f"No curated documents found in project **{project.name}** - "
-            "showing annotations break down for all other documents instead."
-        )
+        render_missing_curated_documents_warning(project.name)
         st.session_state["show_only_curated"] = False
 
-
-    if project_tags:
-        st.write(
-            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: {', '.join(project.tags)}</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.write(
-            f"<div style='text-align: center; font-size: 18px;'><b>Project Name</b>: {project_name} <br> <b>Tags</b>: No tags available</div>",
-            unsafe_allow_html=True,
-        )
-
-    data_sizes_docs = [
-        project_data.doc_categories["NEW"],
-        project_data.doc_categories["ANNOTATION_IN_PROGRESS"],
-        project_data.doc_categories["ANNOTATION_FINISHED"],
-        project_data.doc_categories["CURATION_IN_PROGRESS"],
-        project_data.doc_categories["CURATION_FINISHED"],
-    ]
-
-    data_sizes_tokens = [
-        project_data.doc_token_categories["NEW"],
-        project_data.doc_token_categories["ANNOTATION_IN_PROGRESS"],
-        project_data.doc_token_categories["ANNOTATION_FINISHED"],
-        project_data.doc_token_categories["CURATION_IN_PROGRESS"],
-        project_data.doc_token_categories["CURATION_FINISHED"],
-    ]
-
-    pie_labels = [
-        "New",
-        "Annotation In Progress",
-        "Annotation Finished",
-        "Curation In Progress",
-        "Curation Finished",
-    ]
-
-    df_pie_docs = pd.DataFrame(
-        {"Labels": pie_labels, "Sizes": data_sizes_docs}
-    ).sort_values(by="Labels", ascending=True)
-    df_pie_tokens = pd.DataFrame(
-        {"Labels": pie_labels, "Sizes": data_sizes_tokens}
-    ).sort_values(by="Labels", ascending=True)
-
-    pie_chart = go.Figure()
-    pie_chart.add_trace(
-        go.Pie(
-            labels=df_pie_docs["Labels"],
-            values=df_pie_docs["Sizes"],
-            sort=False,
-            hole=0.4,
-            hoverinfo="percent+label",
-            textinfo="value",
-        )
-    )
-    pie_chart.add_trace(
-        go.Pie(
-            labels=df_pie_tokens["Labels"],
-            values=df_pie_tokens["Sizes"],
-            sort=False,
-            hole=0.4,
-            hoverinfo="percent+label",
-            textinfo="value",
-            visible=False,
-        )
-    )
-
-    pie_chart.update_layout(
-        title=dict(
-            text="Documents Status",
-            font=dict(size=24),
-            y=0.95,
-            x=0.5,
-            xanchor="center",
-        ),
-        font=dict(size=18),
-        legend=dict(font=dict(size=12), y=0.5),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=40, r=40),
-        updatemenus=[
-            {
-                "buttons": [
-                    {
-                        "label": "Documents",
-                        "method": "update",
-                        "args": [
-                            {"visible": [True, False]},
-                            {"title": "Documents Status"},
-                        ],
-                    },
-                    {
-                        "label": "Tokens",
-                        "method": "update",
-                        "args": [
-                            {"visible": [False, True]},
-                            {"title": "Tokens Status"},
-                        ],
-                    },
-                ],
-                "direction": "down",
-                "showactive": True,
-            }
-        ],
-    )
-
-    bar_chart = go.Figure()
-
-    main_traces = 0
-    total_feature_traces = 0
-    category_trace_mapping = {}
-
-    for category, details in type_counts.items():
-        bar_chart.add_trace(
-            go.Bar(
-                y=[category],
-                x=[details["total"]],
-                text=[details["total"]],
-                textposition="auto",
-                name=category.capitalize(),
-                visible=True,
-                orientation="h",
-                hoverinfo="x+y",
-            )
-        )
-        main_traces += 1
-
-    feature_buttons = []
-    max_features_per_type = 30  # limit feature drilldown size to improve performance
-
-    for category, details in type_counts.items():
-        features_items = list(details["features"].items())
-        if len(features_items) < 2:
-            continue
-
-        # Use only the top-N features (already sorted by frequency)
-        top_features = features_items[:max_features_per_type]
-
-        category_start = total_feature_traces
-        for subcategory, value in top_features:
-            # For PHI, value is a dict with per-document counts, for others it's a total
-            if isinstance(value, dict):
-                total_value = sum(value.values())
-            else:
-                total_value = value
-
-            bar_chart.add_trace(
-                go.Bar(
-                    y=[subcategory],
-                    x=[total_value],
-                    text=[total_value],
-                    textposition="auto",
-                    name=subcategory,
-                    visible=False,
-                    orientation="h",
-                    hoverinfo="x+y",
-                )
-            )
-            total_feature_traces += 1
-
-        category_end = total_feature_traces
-        category_trace_mapping[category] = (category_start, category_end)
-
-        visibility = [False] * main_traces + [False] * total_feature_traces
-        for i in range(category_start, category_end):
-            visibility[main_traces + i] = True
-
-        feature_buttons.append(
-            {
-                "args": [{"visible": visibility}],
-                "label": category,
-                "method": "update",
-            }
-        )
-
-    bar_chart_buttons = [
-        {
-            "args": [{"visible": [True] * main_traces + [False] * total_feature_traces}],
-            "label": "Overview",
-            "method": "update",
-        }
-    ] + feature_buttons
-
-    bar_chart.update_layout(
-        title=dict(
-            text=f"Types of Annotations {'(Curated Docs)' if show_only_curated else '(All Docs)'}",
-            font=dict(size=24),
-            y=0.95,
-            x=0.45,
-            xanchor="center",
-        ),
-        xaxis_title="Number of Annotations",
-        barmode="overlay",
-        height=max(200, min(160 * len(type_counts), 500)),
-        font=dict(size=18),
-        legend=dict(font=dict(size=10)),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=10, r=10),
-        colorway=px.colors.qualitative.Plotly,
-    )
-
-    bar_chart.update_layout(
-        updatemenus=[
-            {
-                "buttons": bar_chart_buttons,
-                "direction": "down",
-                "showactive": True,
-                "x": 0.45,
-                "y": 1.15,
-                "xanchor": "center",
-                "yanchor": "top",
-            }
-        ]
-    )
-
-    col1, _, col3 = st.columns([1, 0.1, 1])
-    with col1:
-        st.plotly_chart(pie_chart, use_container_width=True)
-    with col3:
-        st.plotly_chart(bar_chart, use_container_width=True)
+    render_project_header(project_name, project_tags)
+    render_project_charts(project_data, type_counts, show_only_curated)
 
     return project_data
 
@@ -688,12 +413,7 @@ def main():
     startup()
     create_directory_in_home()
 
-    st.write(
-        "<style> h1 {text-align: center; margin-bottom: 50px, } </style>",
-        unsafe_allow_html=True,
-    )
-    st.title("INCEpTION Reporting Dashboard")
-    st.write("<hr>", unsafe_allow_html=True)
+    render_dashboard_title()
     progress_container = st.empty()
     select_method_to_import_data(progress_container=progress_container)
 
