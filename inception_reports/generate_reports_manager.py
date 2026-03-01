@@ -40,8 +40,7 @@ from inception_reports.project_loader import (
 )
 from inception_reports.reporting import (
     build_project_report,
-    compute_cas_stats,
-    find_element_by_name,
+    compute_cas_stats
 )
 from inception_reports.storage import build_reports_archive, export_project_data
 from inception_reports.storage import normalize_project_name
