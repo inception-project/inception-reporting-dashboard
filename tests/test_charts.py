@@ -1,4 +1,4 @@
-from inception_reports.manager_charts import (
+from inception_reports.charts import (
     build_annotation_breakdown_figure,
     build_documents_status_figure,
 )

@@ -24,7 +24,7 @@ import streamlit as st
 from packaging.version import parse as parse_version
 from pycaprio import Pycaprio
 from inception_reports.dashboard_version import DASHBOARD_VERSION
-from inception_reports.manager_charts import render_project_charts
+from inception_reports.charts import render_project_charts
 from inception_reports.manager_ui import (
     apply_dashboard_styles,
     create_progress_widgets,

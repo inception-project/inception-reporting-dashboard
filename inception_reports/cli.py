@@ -80,7 +80,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 
 def resolve_dashboard_script() -> str:
-    return str(Path(__file__).with_name("generate_reports_manager.py"))
+    return str(Path(__file__).with_name("generate.py"))
 
 
 def apply_environment_overrides(args: argparse.Namespace) -> None:

@@ -20,9 +20,12 @@ import zipfile
 from datetime import datetime
 from unittest.mock import Mock, patch
 
-from inception_reports.generate_reports_manager import (
-    find_element_by_name,
+from inception_reports.generate import (
     read_dir,
+)
+
+from inception_reports.reporting import (
+    find_element_by_name
 )
 
 
@@ -40,7 +43,7 @@ def test_find_element_by_name():
     assert find_element_by_name([], "type.Y") == "Y"
 
 
-@patch("inception_reports.generate_reports_manager.compute_cas_stats")
+@patch("inception_reports.generate.compute_cas_stats")
 @patch("cassis.load_cas_from_json")
 @patch("zipfile.is_zipfile", return_value=True)
 def test_read_dir_parses_zip_and_computes_stats(
@@ -89,7 +92,7 @@ def test_export_data(tmp_path, monkeypatch):
     """
 
     # Mock version info (should no longer be used by export_data)
-    from inception_reports import generate_reports_manager as gm
+    from inception_reports import generate as gm
 
     # dashboard_version should be provided upstream
     project_data = {
@@ -121,7 +124,7 @@ def test_export_data(tmp_path, monkeypatch):
         assert exported[key] == value
 
 
-@patch("inception_reports.generate_reports_manager.compute_cas_stats")
+@patch("inception_reports.generate.compute_cas_stats")
 @patch("cassis.load_cas_from_json")
 @patch("zipfile.is_zipfile", return_value=True)
 def test_read_dir_keeps_multi_dot_project_names(
