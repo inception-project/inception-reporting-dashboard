@@ -144,6 +144,12 @@ class CustomSSLAdapter(HTTPAdapter):
         )
         return super().proxy_manager_for(proxy, **proxy_kwargs)
 
+    def __getstate__(self):
+        state = super().__getstate__()
+        state["ca_bundle"] = self.ca_bundle
+        state["verify_ssl"] = self.verify_ssl
+        return state
+
 
 def _create_ssl_context(
     ca_bundle: str | None = None,
