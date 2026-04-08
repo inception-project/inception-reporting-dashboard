@@ -136,7 +136,9 @@ def login_to_inception(api_url, username, password, ca_bundle=None, verify_ssl=T
         api_url = f"http://{api_url}"
     button = st.sidebar.button("Login")
     if button:
-        inception_client = Pycaprio(api_url, (username, password), ca_bundle=ca_bundle, verify=verify_ssl)
+        inception_client = Pycaprio(api_url, (username, password))
+        session = inception_client.api.client.session
+        session.verify = ca_bundle if ca_bundle else verify_ssl
         try:
             inception_client.api.projects()
             st.sidebar.success("Login successful")
