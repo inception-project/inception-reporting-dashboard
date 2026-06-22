@@ -60,6 +60,7 @@ log = logging.getLogger()
 
 
 def startup():
+    log.info("Starting dashboard UI initialization")
     apply_dashboard_styles()
 
     project_info = get_project_info()
@@ -70,6 +71,17 @@ def startup():
         has_update = latest_version and parse_version(current_version) < parse_version(
             latest_version
         )
+        if has_update:
+            log.info(
+                "Dashboard version %s is behind latest package version %s",
+                current_version,
+                latest_version,
+            )
+        else:
+            log.info(
+                "No newer dashboard version reported; current version is %s",
+                current_version,
+            )
         render_version_status(current_version, latest_version if has_update else None)
 
 
@@ -84,7 +96,8 @@ def check_package_version(current_version, package_name):
             latest_version = response.json()["info"]["version"]
             if parse_version(current_version) < parse_version(latest_version):
                 return latest_version
-    except requests.RequestException:
+    except requests.RequestException as error:
+        log.debug("Package version check failed for %s: %s", package_name, error)
         return None
     return None
 
@@ -182,10 +195,19 @@ def login_to_inception(api_url, username, password, ca_bundle=None, verify_ssl=T
 
         try:
             api_url = _normalize_api_url(api_url)
+            log.info(
+                "Attempting INCEpTION API login to %s; ca_bundle_configured=%s; verify_ssl=%s",
+                api_url,
+                bool(ca_bundle),
+                verify_ssl,
+            )
             inception_client = Pycaprio(api_url, (username, password))
             session = inception_client.api.client.session
             session.verify = ca_bundle if ca_bundle else verify_ssl
-            inception_client.api.projects()
+            projects = inception_client.api.projects()
+            log.info(
+                "INCEpTION API login successful; %s project(s) available", len(projects)
+            )
             st.sidebar.success("Login successful")
             return True, inception_client
         except Exception as error:
@@ -203,6 +225,7 @@ def select_method_to_import_data(progress_container=None):
     method = st.sidebar.radio(
         "Choose your method to import data:", ("Manually", "API"), index=1
     )
+    log.debug("Selected import method: %s", method)
 
     # --- MANUAL IMPORT ---
     if method == "Manually":
@@ -213,6 +236,10 @@ def select_method_to_import_data(progress_container=None):
         button = st.sidebar.button("Generate Reports")
         if button:
             if uploaded_files:
+                log.info(
+                    "Manual report generation requested for %s uploaded file(s)",
+                    len(uploaded_files),
+                )
                 temp_dir = os.path.join(
                     os.path.expanduser("~"), ".inception_reports", "temp_uploads"
                 )
@@ -232,6 +259,7 @@ def select_method_to_import_data(progress_container=None):
                     create_progress_widgets(progress_container)
                 )
 
+                log.info("Processing manual upload(s) from %s", temp_dir)
                 st.session_state["projects"] = read_dir(
                     dir_path=temp_dir,
                     selected_projects_data={name: -1 for name in selected_projects},
@@ -240,6 +268,10 @@ def select_method_to_import_data(progress_container=None):
                 )
                 st.session_state["projects_folder"] = temp_dir
 
+                log.info(
+                    "Manual report generation loaded %s project(s)",
+                    len(st.session_state["projects"]),
+                )
                 if progress_label is not None and progress_bar is not None:
                     progress_label.text("Report generation complete.")
                     progress_bar.progress(100)
@@ -274,6 +306,10 @@ def select_method_to_import_data(progress_container=None):
 
         if inception_status and "available_projects" not in st.session_state:
             inception_projects = inception_client.api.projects()
+            log.info(
+                "Fetched %s available project(s) from INCEpTION API",
+                len(inception_projects),
+            )
             st.session_state["available_projects"] = inception_projects
 
         if inception_status and "available_projects" in st.session_state:
@@ -295,6 +331,10 @@ def select_method_to_import_data(progress_container=None):
                 selected_ids = [
                     pid for pid, is_selected in selected_projects.items() if is_selected
                 ]
+                log.info(
+                    "API report generation requested for %s selected project(s)",
+                    len(selected_ids),
+                )
                 if not selected_ids:
                     st.sidebar.warning(
                         "Please select at least one project to generate reports."
@@ -318,7 +358,9 @@ def select_method_to_import_data(progress_container=None):
 
                             st.sidebar.write(f"Importing project: {project_name}")
                             log.info(
-                                f"Importing project {project_name} into {file_path}"
+                                "Exporting project %s from INCEpTION API to %s",
+                                project_name,
+                                file_path,
                             )
 
                             project_export = inception_client.api.export_project(
@@ -326,7 +368,11 @@ def select_method_to_import_data(progress_container=None):
                             )
                             with open(file_path, "wb") as f:
                                 f.write(project_export)
-                            log.debug("Import Success")
+                            log.info(
+                                "Exported project %s from INCEpTION API (%s bytes)",
+                                project_name,
+                                len(project_export),
+                            )
 
                 # Clear spinner/status area before showing the CAS progress bar
                 if progress_container is not None:
@@ -339,6 +385,7 @@ def select_method_to_import_data(progress_container=None):
                     create_progress_widgets(progress_container)
                 )
 
+                log.info("Processing API project export(s) from %s", projects_folder)
                 st.session_state["projects"] = read_dir(
                     dir_path=projects_folder,
                     selected_projects_data=selected_projects_data,
@@ -350,6 +397,10 @@ def select_method_to_import_data(progress_container=None):
                     verify_ssl=verify_ssl,
                 )
 
+                log.info(
+                    "API report generation loaded %s project(s)",
+                    len(st.session_state["projects"]),
+                )
                 if progress_label is not None and progress_bar is not None:
                     progress_label.text("Report generation complete.")
                     progress_bar.progress(100)
@@ -387,6 +438,10 @@ def export_data(project_data: ExportedProjectData | dict):
     Parameters:
         project_data (dict): The data to be exported.
     """
+    log.info(
+        "Exporting dashboard data for project %s",
+        getattr(project_data, "project_name", None) or project_data["project_name"],
+    )
     output_path = export_project_data(project_data)
     project_name = (
         project_data.project_name
@@ -403,6 +458,7 @@ def create_zip_download(reports: list[ExportedProjectData]):
     Create a zip file containing all generated JSON reports and provide a download button.
     """
 
+    log.info("Preparing ZIP download for %s generated report(s)", len(reports))
     archive_data = build_reports_archive(reports)
     if archive_data:
         st.download_button(
@@ -431,6 +487,12 @@ def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
 
     aggregation_mode = st.session_state.get("aggregation_mode", "Sum")
     show_only_curated = st.session_state.get("show_only_curated", True)
+    log.info(
+        "Rendering project %s with aggregation_mode=%s; show_only_curated=%s",
+        project.name,
+        aggregation_mode,
+        show_only_curated,
+    )
     report = build_project_report(
         project=project,
         aggregation_mode=aggregation_mode,
@@ -447,6 +509,10 @@ def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
         st.session_state.get("show_only_curated", True)
         and not report.has_curated_documents
     ):
+        log.info(
+            "Project %s has no curated documents; switching chart to all documents",
+            project.name,
+        )
         render_missing_curated_documents_warning(project.name)
         st.session_state["show_only_curated"] = False
 
@@ -458,6 +524,7 @@ def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
 
 def main():
 
+    log.info("Dashboard main started")
     startup()
     create_directory_in_home()
 
@@ -469,12 +536,16 @@ def main():
     if "method" in st.session_state and "projects" in st.session_state:
         projects = [copy.deepcopy(project) for project in st.session_state["projects"]]
         projects = sorted(projects, key=lambda project: project.name)
+        log.info(
+            "Rendering and exporting %s generated project report(s)", len(projects)
+        )
         for project in projects:
             project_data = plot_project_progress(project)
             export_data(project_data)
             generated_reports.append(project_data)
         st.write("<hr>", unsafe_allow_html=True)
         create_zip_download(generated_reports)
+        log.info("Dashboard report rendering complete")
 
 
 if __name__ == "__main__":

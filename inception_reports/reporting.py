@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
+import logging
 
 import cassis
 from inception_reports.models import (
@@ -40,6 +41,8 @@ DOCUMENT_STATES = (
 )
 
 FEATURE_BREAKDOWN_EXPORT_TYPES = {"PHI", "Concept"}
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -167,11 +170,23 @@ def get_type_counts(
 ) -> AggregatedTypeCounts:
     type_counts: AggregatedTypeCounts = {}
 
+    log.info(
+        "Aggregating annotation counts for %s document(s) with %s mode",
+        len(annotations),
+        aggregation_mode,
+    )
+
     for document_name, annotator_map in annotations.items():
         cas_stats_list = list(annotator_map.values())
         if not cas_stats_list:
+            log.debug("No CAS stats available for document %s", document_name)
             continue
 
+        log.debug(
+            "Aggregating %s CAS file(s) for document %s",
+            len(cas_stats_list),
+            document_name,
+        )
         combined_counts = _aggregate_document_counts(cas_stats_list, aggregation_mode)
 
         if snomed_labels:
@@ -204,12 +219,16 @@ def get_type_counts(
             )
         )
 
-    return dict(
+    sorted_type_counts = dict(
         sorted(type_counts.items(), key=lambda item: item[1]["total"], reverse=True)
     )
+    log.info("Aggregated %s annotation type(s)", len(sorted_type_counts))
+    return sorted_type_counts
 
 
-def summarize_document_categories(project_documents: list[ProjectDocument]) -> dict[str, int]:
+def summarize_document_categories(
+    project_documents: list[ProjectDocument],
+) -> dict[str, int]:
     categories = {state: 0 for state in DOCUMENT_STATES}
     for document in project_documents:
         state = document.get("state")
@@ -316,6 +335,13 @@ def build_project_report(
     dashboard_version: str | None,
     show_only_curated: bool,
 ) -> ProjectReport:
+    log.info(
+        "Building report for project %s with %s document(s); aggregation_mode=%s; show_only_curated=%s",
+        project.name,
+        len(project.documents),
+        aggregation_mode,
+        show_only_curated,
+    )
     full_type_counts = get_type_counts(
         project.annotations,
         project.snomed_labels,
@@ -329,6 +355,18 @@ def build_project_report(
         else full_type_counts
     )
 
+    if show_only_curated and not curated_documents:
+        log.info(
+            "Project %s has no curated documents; using all documents for chart counts",
+            project.name,
+        )
+    elif use_curated_documents:
+        log.info(
+            "Project %s chart counts limited to %s curated document(s)",
+            project.name,
+            len(curated_documents),
+        )
+
     project_data = ExportedProjectData(
         project_name=project.name.removesuffix(".zip"),
         project_tags=project.tags,
@@ -341,6 +379,12 @@ def build_project_report(
         created=date.today().isoformat(),
         inception_version=project.inception_version,
         dashboard_version=dashboard_version,
+    )
+
+    log.info(
+        "Built report for project %s with %s exported annotation type(s)",
+        project.name,
+        len(project_data.type_counts),
     )
 
     return ProjectReport(

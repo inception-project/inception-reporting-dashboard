@@ -92,6 +92,7 @@ def ensure_default_config() -> Path:
     user_config_path = config_directory / EXCLUDED_TYPES_FILE
 
     if user_config_path.exists():
+        log.debug("Using excluded types config at %s", user_config_path)
         return user_config_path
 
     try:
@@ -115,7 +116,9 @@ def load_excluded_types() -> set[str]:
         log.warning("Could not read excluded_types.json: %s", error)
         return set()
 
-    return set(config.get("excluded_types", []))
+    excluded_types = set(config.get("excluded_types", []))
+    log.info("Loaded %s excluded CAS type(s) from %s", len(excluded_types), config_path)
+    return excluded_types
 
 
 def batched(iterable, batch_size: int):
@@ -179,6 +182,11 @@ def _create_ssl_context(
 def create_ssl_session(
     ca_bundle: str | None = None, verify_ssl: bool = True
 ) -> requests.Session:
+    log.debug(
+        "Creating SSL session; ca_bundle_configured=%s; verify_ssl=%s",
+        bool(ca_bundle),
+        verify_ssl,
+    )
     session = requests.Session()
     adapter = CustomSSLAdapter(ca_bundle=ca_bundle, verify_ssl=verify_ssl)
     session.mount("https://", adapter)
@@ -220,6 +228,13 @@ def get_snomed_semantic_tag_map(
     parentheses_pattern = re.compile(r"\(([^)]+)\)")
     session = create_ssl_session(ca_bundle=ca_bundle, verify_ssl=verify_ssl)
 
+    log.info(
+        "Fetching SNOMED semantic labels for %s concept(s) from project %s KB %s",
+        len(snomed_ids),
+        project_id,
+        kb_id,
+    )
+
     for batch in batched(snomed_ids, batch_size):
         values_clause = "\n    ".join(f"<{concept_uri}>" for concept_uri in batch)
         query = f"""
@@ -247,6 +262,7 @@ def get_snomed_semantic_tag_map(
         except Exception as error:
             log.warning("SPARQL batch query failed for %s IDs: %s", len(batch), error)
 
+    log.info("Fetched %s SNOMED semantic label(s)", len(semantic_map))
     return semantic_map
 
 
@@ -282,6 +298,7 @@ def _project_stem(file_name: str) -> str:
 def _iter_selected_archives(
     dir_path: str, selected_projects_data: dict[str, Any] | None
 ) -> list[tuple[str, str, str]]:
+    log.info("Scanning %s for INCEpTION project archives", dir_path)
     archives = []
     for file_name in sorted(os.listdir(dir_path)):
         project_stem = _project_stem(file_name)
@@ -291,11 +308,17 @@ def _iter_selected_archives(
         file_path = os.path.join(dir_path, file_name)
         if zipfile.is_zipfile(file_path):
             archives.append((file_name, project_stem, file_path))
+            log.debug("Selected project archive %s", file_path)
+        else:
+            log.debug("Skipping non-ZIP file %s", file_path)
 
+    log.info("Selected %s project archive(s) from %s", len(archives), dir_path)
     return archives
 
 
-def _load_project_meta(zip_file: zipfile.ZipFile, file_name: str) -> dict[str, Any] | None:
+def _load_project_meta(
+    zip_file: zipfile.ZipFile, file_name: str
+) -> dict[str, Any] | None:
     try:
         return json.loads(zip_file.read("exportedproject.json").decode("utf-8"))
     except KeyError:
@@ -329,10 +352,12 @@ def _build_cas_files_by_folder(
         folder_prefix = f"{info.filename.rsplit('/', 1)[0]}/"
         cas_files_by_folder[folder_prefix].append(info.filename)
 
-    return {
+    grouped_files = {
         folder_prefix: tuple(paths)
         for folder_prefix, paths in cas_files_by_folder.items()
     }
+    log.debug("Grouped CAS files into %s document folder(s)", len(grouped_files))
+    return grouped_files
 
 
 def _matching_cas_files(
@@ -444,6 +469,15 @@ def _prepare_project_archives(
                     continue
 
                 cas_files_by_folder = _build_cas_files_by_folder(zip_file)
+                total_cas_files = _count_archive_cas_files(
+                    cas_files_by_folder, project_documents
+                )
+                log.info(
+                    "Prepared project archive %s with %s document(s) and %s CAS file(s)",
+                    file_name,
+                    len(project_documents),
+                    total_cas_files,
+                )
                 prepared_archives.append(
                     PreparedProjectArchive(
                         file_name=file_name,
@@ -452,9 +486,7 @@ def _prepare_project_archives(
                         project_meta=project_meta,
                         project_documents=project_documents,
                         cas_files_by_folder=cas_files_by_folder,
-                        total_cas_files=_count_archive_cas_files(
-                            cas_files_by_folder, project_documents
-                        ),
+                        total_cas_files=total_cas_files,
                     )
                 )
         except Exception as error:
@@ -517,13 +549,18 @@ def read_dir(
     progress_callback=None,
     ca_bundle: str | None = None,
     verify_ssl: bool = True,
-    compute_stats: Callable[[Any, set[str]], tuple[CasStats, set[str]]]
-    | None = None,
+    compute_stats: Callable[[Any, set[str]], tuple[CasStats, set[str]]] | None = None,
 ) -> list[LoadedProject]:
+    log.info("Loading projects from %s in %s mode", dir_path, mode)
     compute_stats = compute_stats or compute_cas_stats
     excluded_types = load_excluded_types()
     archives = _prepare_project_archives(dir_path, selected_projects_data)
     total_cas_overall = sum(archive.total_cas_files for archive in archives)
+    log.info(
+        "Prepared %s project archive(s) with %s CAS file(s) total",
+        len(archives),
+        total_cas_overall,
+    )
 
     if progress_callback and total_cas_overall == 0:
         progress_callback(0, 0, None, None)
@@ -562,6 +599,12 @@ def read_dir(
                     verify_ssl=verify_ssl,
                 )
 
+                log.info(
+                    "Finished processing project %s: %s document(s), %s SNOMED label(s)",
+                    archive.file_name,
+                    len(archive.project_documents),
+                    len(snomed_label_map),
+                )
                 projects.append(
                     LoadedProject(
                         name=archive.file_name,
@@ -582,5 +625,6 @@ def read_dir(
     if progress_callback and total_cas_overall > 0:
         progress_callback(total_cas_overall, total_cas_overall, None, None)
 
+    log.info("Loaded %s project(s) from %s", len(projects), dir_path)
     gc.collect()
     return projects
