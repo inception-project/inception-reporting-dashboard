@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+if [ -x "../.denv/bin/python" ]; then
+    PYTHON="../.denv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON="python3"
+else
+    echo "Could not find Python to sync dashboard version." >&2
+    exit 1
+fi
+
+"$PYTHON" scripts/sync_version.py
+git add inception_reports/dashboard_version.py
