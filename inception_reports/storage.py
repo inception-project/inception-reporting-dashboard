@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import zipfile
 from dataclasses import asdict, is_dataclass
@@ -26,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 from inception_reports.models import ExportedProjectData
+
+log = logging.getLogger(__name__)
 
 
 def normalize_project_name(project_name: str) -> str:
@@ -67,25 +70,32 @@ def export_project_data(
     destination.mkdir(parents=True, exist_ok=True)
 
     project_name = normalize_project_name(serialized_project_data["project_name"])
+    log.info("Exporting project report for %s to %s", project_name, destination)
     output_path = destination / f"{project_name}_{export_date}.json"
     output_path.write_text(
         json.dumps(serialized_project_data, indent=4), encoding="utf-8"
     )
+    log.info("Exported project report for %s to %s", project_name, output_path)
     return output_path
 
 
 def build_reports_archive(
-    reports: list[ExportedProjectData | dict[str, Any]]
+    reports: list[ExportedProjectData | dict[str, Any]],
 ) -> bytes | None:
     if not reports:
+        log.info("No reports provided; skipping ZIP archive creation")
         return None
 
+    log.info("Building reports ZIP archive for %s project(s)", len(reports))
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as archive:
         for report in reports:
             serialized_report = _serialize_project_data(report)
             report_name = normalize_project_name(serialized_report["project_name"])
             file_name = f"{report_name}_{serialized_report['created']}.json"
+            log.debug("Adding %s to reports ZIP archive", file_name)
             archive.writestr(file_name, json.dumps(serialized_report, indent=4))
 
-    return zip_buffer.getvalue()
+    archive_data = zip_buffer.getvalue()
+    log.info("Built reports ZIP archive (%s bytes)", len(archive_data))
+    return archive_data
