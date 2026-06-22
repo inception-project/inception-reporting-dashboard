@@ -23,6 +23,7 @@ import requests
 import streamlit as st
 from packaging.version import parse as parse_version
 from pycaprio import Pycaprio
+from pycaprio.core.exceptions import InceptionBadResponse
 from inception_reports.dashboard_version import DASHBOARD_VERSION
 from inception_reports.charts import render_project_charts
 from inception_reports.manager_ui import (
@@ -38,10 +39,7 @@ from inception_reports.project_loader import (
     create_directory_in_home,
     read_dir as load_projects_from_directory,
 )
-from inception_reports.reporting import (
-    build_project_report,
-    compute_cas_stats
-)
+from inception_reports.reporting import build_project_report, compute_cas_stats
 from inception_reports.storage import build_reports_archive, export_project_data
 from inception_reports.storage import normalize_project_name
 
@@ -84,13 +82,54 @@ def check_package_version(current_version, package_name):
         response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
         if response.status_code == 200:
             latest_version = response.json()["info"]["version"]
-            if parse_version(
-                current_version
-            ) < parse_version(latest_version):
+            if parse_version(current_version) < parse_version(latest_version):
                 return latest_version
     except requests.RequestException:
         return None
     return None
+
+
+def describe_api_login_failure(error: Exception) -> str:
+    if isinstance(error, InceptionBadResponse):
+        status_code = error.status_code
+        if status_code in {401, 403}:
+            return "Login unsuccessful: username or password was rejected."
+        if status_code == 404:
+            return (
+                "Login unsuccessful: the INCEpTION API endpoint was not found. "
+                "Check the API URL."
+            )
+        if 500 <= status_code < 600:
+            return (
+                f"Login unsuccessful: the INCEpTION server returned HTTP {status_code}. "
+                "Try again later or check the server logs."
+            )
+        return f"Login unsuccessful: the INCEpTION server returned HTTP {status_code}."
+
+    if isinstance(error, requests.exceptions.SSLError):
+        return (
+            "Login unsuccessful: SSL certificate verification failed. "
+            "Check the certificate settings."
+        )
+    if isinstance(error, requests.exceptions.Timeout):
+        return "Login unsuccessful: the INCEpTION server did not respond in time."
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return (
+            "Login unsuccessful: the INCEpTION server could not be reached. "
+            "Check the API URL and network connection."
+        )
+    if isinstance(error, requests.exceptions.RequestException):
+        return f"Login unsuccessful: request failed ({error})."
+
+    return f"Login unsuccessful: {error}"
+
+
+def _normalize_api_url(api_url: str) -> str:
+    api_url = api_url.strip()
+    if not api_url.startswith(("http://", "https://")):
+        return f"http://{api_url}"
+    return api_url
+
 
 def read_dir(
     dir_path: str,
@@ -132,19 +171,26 @@ def login_to_inception(api_url, username, password, ca_bundle=None, verify_ssl=T
         tuple: A tuple containing a boolean value indicating whether the login was successful and an instance of the Inception client.
 
     """
-    if "http" not in api_url:
-        api_url = f"http://{api_url}"
     button = st.sidebar.button("Login")
     if button:
-        inception_client = Pycaprio(api_url, (username, password))
-        session = inception_client.api.client.session
-        session.verify = ca_bundle if ca_bundle else verify_ssl
+        if not api_url.strip():
+            st.sidebar.error("Login unsuccessful: enter an API URL.")
+            return False, None
+        if not username or not password:
+            st.sidebar.error("Login unsuccessful: enter a username and password.")
+            return False, None
+
         try:
+            api_url = _normalize_api_url(api_url)
+            inception_client = Pycaprio(api_url, (username, password))
+            session = inception_client.api.client.session
+            session.verify = ca_bundle if ca_bundle else verify_ssl
             inception_client.api.projects()
             st.sidebar.success("Login successful")
             return True, inception_client
-        except Exception:
-            st.sidebar.error("Login unsuccessful")
+        except Exception as error:
+            log.warning("INCEpTION API login failed: %s", error)
+            st.sidebar.error(describe_api_login_failure(error))
             return False, None
     return False, None
 
@@ -182,8 +228,8 @@ def select_method_to_import_data(progress_container=None):
                     for uploaded_file in uploaded_files
                 ]
 
-                progress_label, progress_bar, progress_callback = create_progress_widgets(
-                    progress_container
+                progress_label, progress_bar, progress_callback = (
+                    create_progress_widgets(progress_container)
                 )
 
                 st.session_state["projects"] = read_dir(
@@ -246,9 +292,13 @@ def select_method_to_import_data(progress_container=None):
             button = st.sidebar.button("Generate Reports")
             if button:
                 # Determine which projects are actually selected
-                selected_ids = [pid for pid, is_selected in selected_projects.items() if is_selected]
+                selected_ids = [
+                    pid for pid, is_selected in selected_projects.items() if is_selected
+                ]
                 if not selected_ids:
-                    st.sidebar.warning("Please select at least one project to generate reports.")
+                    st.sidebar.warning(
+                        "Please select at least one project to generate reports."
+                    )
                     return
 
                 # --- TOP-OF-PAGE SPINNER + STATUS TEXT FOR EXPORT PHASE ---
@@ -259,7 +309,6 @@ def select_method_to_import_data(progress_container=None):
 
                 with export_container:
                     with st.spinner("Exporting selected projects from INCEpTION…"):
-
                         for _, project_id in enumerate(selected_ids, start=1):
                             project = inception_client.api.project(project_id)
                             project_name = project.project_name
@@ -286,8 +335,8 @@ def select_method_to_import_data(progress_container=None):
                 st.session_state["method"] = "API"
 
                 # Now initialize the CAS-processing progress bar at the top
-                progress_label, progress_bar, progress_callback = create_progress_widgets(
-                    progress_container
+                progress_label, progress_bar, progress_callback = (
+                    create_progress_widgets(progress_container)
                 )
 
                 st.session_state["projects"] = read_dir(
@@ -305,7 +354,6 @@ def select_method_to_import_data(progress_container=None):
                     progress_label.text("Report generation complete.")
                     progress_bar.progress(100)
 
-
     # --- AGGREGATION MODE SELECTOR (always visible once projects exist) ---
     if "projects" in st.session_state or "projects_folder" in st.session_state:
         st.sidebar.markdown("---")
@@ -321,7 +369,7 @@ def select_method_to_import_data(progress_container=None):
             ),
         )
         st.session_state["aggregation_mode"] = aggregation_mode
-    
+
     st.sidebar.markdown("---")
     # --- Visualization scope toggle ---
     show_only_curated = st.sidebar.checkbox(
@@ -330,9 +378,6 @@ def select_method_to_import_data(progress_container=None):
         help="If checked, the annotation type bar chart will only include documents whose state is CURATION_FINISHED.",
     )
     st.session_state["show_only_curated"] = show_only_curated
-
-
-
 
 
 def export_data(project_data: ExportedProjectData | dict):
@@ -398,7 +443,10 @@ def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
     project_tags = project_data.project_tags
     show_only_curated = report.show_only_curated
 
-    if st.session_state.get("show_only_curated", True) and not report.has_curated_documents:
+    if (
+        st.session_state.get("show_only_curated", True)
+        and not report.has_curated_documents
+    ):
         render_missing_curated_documents_warning(project.name)
         st.session_state["show_only_curated"] = False
 
@@ -406,7 +454,6 @@ def plot_project_progress(project: LoadedProject) -> ExportedProjectData:
     render_project_charts(project_data, type_counts, show_only_curated)
 
     return project_data
-
 
 
 def main():

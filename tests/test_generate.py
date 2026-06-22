@@ -20,13 +20,16 @@ import zipfile
 from datetime import datetime
 from unittest.mock import Mock, patch
 
+import requests
+from pycaprio.core.exceptions import InceptionBadResponse
+
 from inception_reports.generate import (
+    describe_api_login_failure,
+    login_to_inception,
     read_dir,
 )
 
-from inception_reports.reporting import (
-    find_element_by_name
-)
+from inception_reports.reporting import find_element_by_name
 
 
 def test_find_element_by_name():
@@ -41,6 +44,79 @@ def test_find_element_by_name():
     assert find_element_by_name([e1, e2], "type.B") == "B-Type"
     assert find_element_by_name([e1, e2], "type.X") == "X"
     assert find_element_by_name([], "type.Y") == "Y"
+
+
+def _bad_response(status_code):
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = b"API error"
+    return response
+
+
+def test_describe_api_login_failure_distinguishes_common_errors():
+    assert (
+        describe_api_login_failure(InceptionBadResponse(_bad_response(401)))
+        == "Login unsuccessful: username or password was rejected."
+    )
+    assert (
+        describe_api_login_failure(requests.exceptions.ConnectionError())
+        == "Login unsuccessful: the INCEpTION server could not be reached. "
+        "Check the API URL and network connection."
+    )
+    assert (
+        describe_api_login_failure(requests.exceptions.Timeout())
+        == "Login unsuccessful: the INCEpTION server did not respond in time."
+    )
+    assert (
+        describe_api_login_failure(requests.exceptions.SSLError())
+        == "Login unsuccessful: SSL certificate verification failed. "
+        "Check the certificate settings."
+    )
+
+
+def test_login_to_inception_requires_api_url():
+    with (
+        patch("inception_reports.generate.st.sidebar.button", return_value=True),
+        patch("inception_reports.generate.st.sidebar.error") as mock_error,
+    ):
+        status, client = login_to_inception("", "user", "password")
+
+    assert status is False
+    assert client is None
+    mock_error.assert_called_once_with("Login unsuccessful: enter an API URL.")
+
+
+def test_login_to_inception_requires_credentials():
+    with (
+        patch("inception_reports.generate.st.sidebar.button", return_value=True),
+        patch("inception_reports.generate.st.sidebar.error") as mock_error,
+    ):
+        status, client = login_to_inception("https://example.org", "", "")
+
+    assert status is False
+    assert client is None
+    mock_error.assert_called_once_with(
+        "Login unsuccessful: enter a username and password."
+    )
+
+
+def test_login_to_inception_reports_bad_credentials():
+    fake_client = Mock()
+    fake_client.api.client.session = Mock()
+    fake_client.api.projects.side_effect = InceptionBadResponse(_bad_response(401))
+
+    with (
+        patch("inception_reports.generate.st.sidebar.button", return_value=True),
+        patch("inception_reports.generate.st.sidebar.error") as mock_error,
+        patch("inception_reports.generate.Pycaprio", return_value=fake_client),
+    ):
+        status, client = login_to_inception("example.org", "user", "wrong")
+
+    assert status is False
+    assert client is None
+    mock_error.assert_called_once_with(
+        "Login unsuccessful: username or password was rejected."
+    )
 
 
 @patch("inception_reports.generate.compute_cas_stats")
